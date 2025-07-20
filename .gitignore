@@ -1,0 +1,23 @@
+# .gitignore ファイルを作成
+echo "# 環境固有ファイル
+.env
+*.pid
+*.db
+
+# 仮想環境
+test_env/
+venv/
+__pycache__/
+*.pyc
+
+# IDEファイル
+.vscode/
+.idea/
+
+# ログファイル
+logs/
+*.log
+
+# OS固有
+.DS_Store
+Thumbs.db" > .gitignore

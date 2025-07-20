@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(touch:*)",
+      "Bash(python:*)",
+      "Bash(for:*)",
+      "Bash(do echo \"Checking $file\")",
+      "Bash(echo:*)",
+      "Bash(done)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)"
+    ],
+    "deny": []
+  }
+}

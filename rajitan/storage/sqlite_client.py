@@ -1,0 +1,356 @@
+import aiosqlite
+import asyncio
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+from rajitan.storage.models import Guild, Channel, Character, Schedule, UsageStat
+from rajitan.utils.logger import get_logger
+from rajitan.utils.config import get_config
+
+logger = get_logger("sqlite_client")
+config = get_config()
+
+
+class SQLiteClient:
+    """SQLite database client"""
+    
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = db_path or config.database_url.replace("sqlite:///", "")
+        self._initialized = False
+    
+    async def initialize(self):
+        """Initialize database tables"""
+        if self._initialized:
+            return
+        
+        try:
+            await self._create_tables()
+            self._initialized = True
+            logger.info("SQLite database initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize SQLite database: {e}")
+            raise
+    
+    async def _create_tables(self):
+        """Create database tables"""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Guilds table
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS guilds (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Channels table
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS channels (
+                    id TEXT PRIMARY KEY,
+                    guild_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (guild_id) REFERENCES guilds(id)
+                )
+            ''')
+            
+            # Characters table
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS characters (
+                    guild_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    system_prompt TEXT NOT NULL,
+                    personality_traits TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (guild_id) REFERENCES guilds(id)
+                )
+            ''')
+            
+            # Schedules table
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS schedules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    channel_id TEXT NOT NULL,
+                    guild_id TEXT NOT NULL,
+                    schedule_type TEXT NOT NULL,
+                    function_type TEXT NOT NULL,
+                    custom_message TEXT,
+                    
+                    pattern_type TEXT NOT NULL,
+                    hour INTEGER,
+                    minute INTEGER,
+                    day_of_week INTEGER,
+                    day_of_month INTEGER,
+                    specific_datetime TIMESTAMP,
+                    
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_by TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_executed TIMESTAMP,
+                    next_execution TIMESTAMP,
+                    
+                    FOREIGN KEY (channel_id) REFERENCES channels(id),
+                    FOREIGN KEY (guild_id) REFERENCES guilds(id)
+                )
+            ''')
+            
+            # Schedule executions table
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS schedule_executions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    schedule_id INTEGER NOT NULL,
+                    executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    status TEXT NOT NULL,
+                    error_message TEXT,
+                    execution_time_ms INTEGER,
+                    
+                    FOREIGN KEY (schedule_id) REFERENCES schedules(id)
+                )
+            ''')
+            
+            # Usage statistics table
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS usage_stats (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id TEXT NOT NULL,
+                    channel_id TEXT NOT NULL,
+                    feature_type TEXT NOT NULL,
+                    execution_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    success BOOLEAN DEFAULT TRUE,
+                    FOREIGN KEY (guild_id) REFERENCES guilds(id)
+                )
+            ''')
+            
+            await db.commit()
+    
+    # Guild operations
+    async def create_guild(self, guild: Guild) -> bool:
+        """Create a new guild"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(
+                    'INSERT OR REPLACE INTO guilds (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)',
+                    (guild.id, guild.name, guild.created_at, guild.updated_at)
+                )
+                await db.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to create guild: {e}")
+            return False
+    
+    async def get_guild(self, guild_id: str) -> Optional[Guild]:
+        """Get guild by ID"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(
+                    'SELECT id, name, created_at, updated_at FROM guilds WHERE id = ?',
+                    (guild_id,)
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        return Guild(
+                            id=row[0],
+                            name=row[1],
+                            created_at=datetime.fromisoformat(row[2]),
+                            updated_at=datetime.fromisoformat(row[3])
+                        )
+                    return None
+        except Exception as e:
+            logger.error(f"Failed to get guild: {e}")
+            return None
+    
+    # Channel operations
+    async def create_channel(self, channel: Channel) -> bool:
+        """Create a new channel"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(
+                    'INSERT OR REPLACE INTO channels (id, guild_id, name, is_active, created_at) VALUES (?, ?, ?, ?, ?)',
+                    (channel.id, channel.guild_id, channel.name, channel.is_active, channel.created_at)
+                )
+                await db.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to create channel: {e}")
+            return False
+    
+    async def get_channel(self, channel_id: str) -> Optional[Channel]:
+        """Get channel by ID"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(
+                    'SELECT id, guild_id, name, is_active, created_at FROM channels WHERE id = ?',
+                    (channel_id,)
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        return Channel(
+                            id=row[0],
+                            guild_id=row[1],
+                            name=row[2],
+                            is_active=bool(row[3]),
+                            created_at=datetime.fromisoformat(row[4])
+                        )
+                    return None
+        except Exception as e:
+            logger.error(f"Failed to get channel: {e}")
+            return None
+    
+    # Character operations
+    async def create_character(self, character: Character) -> bool:
+        """Create or update a character"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                personality_traits = character.personality_traits
+                if personality_traits:
+                    import json
+                    personality_traits = json.dumps(personality_traits)
+                
+                await db.execute(
+                    'INSERT OR REPLACE INTO characters (guild_id, name, system_prompt, personality_traits, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+                    (character.guild_id, character.name, character.system_prompt, personality_traits, character.created_at, character.updated_at)
+                )
+                await db.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to create character: {e}")
+            return False
+    
+    async def get_character(self, guild_id: str) -> Optional[Character]:
+        """Get character by guild ID"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(
+                    'SELECT guild_id, name, system_prompt, personality_traits, created_at, updated_at FROM characters WHERE guild_id = ?',
+                    (guild_id,)
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        personality_traits = None
+                        if row[3]:
+                            import json
+                            personality_traits = json.loads(row[3])
+                        
+                        return Character(
+                            guild_id=row[0],
+                            name=row[1],
+                            system_prompt=row[2],
+                            personality_traits=personality_traits,
+                            created_at=datetime.fromisoformat(row[4]),
+                            updated_at=datetime.fromisoformat(row[5])
+                        )
+                    return None
+        except Exception as e:
+            logger.error(f"Failed to get character: {e}")
+            return None
+    
+    # Schedule operations
+    async def create_schedule(self, schedule: Schedule) -> bool:
+        """Create a new schedule"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(
+                    '''INSERT INTO schedules (
+                        channel_id, guild_id, schedule_type, function_type, custom_message,
+                        pattern_type, hour, minute, day_of_week, day_of_month, specific_datetime,
+                        is_active, created_by, created_at, last_executed, next_execution
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                    (
+                        schedule.channel_id, schedule.guild_id, schedule.schedule_type, 
+                        schedule.function_type, schedule.custom_message,
+                        schedule.pattern_type, schedule.hour, schedule.minute, 
+                        schedule.day_of_week, schedule.day_of_month, schedule.specific_datetime,
+                        schedule.is_active, schedule.created_by, schedule.created_at, 
+                        schedule.last_executed, schedule.next_execution
+                    )
+                )
+                await db.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to create schedule: {e}")
+            return False
+    
+    async def get_schedules(self, channel_id: str) -> List[Schedule]:
+        """Get all schedules for a channel"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(
+                    '''SELECT id, channel_id, guild_id, schedule_type, function_type, custom_message,
+                        pattern_type, hour, minute, day_of_week, day_of_month, specific_datetime,
+                        is_active, created_by, created_at, last_executed, next_execution 
+                        FROM schedules WHERE channel_id = ?''',
+                    (channel_id,)
+                ) as cursor:
+                    rows = await cursor.fetchall()
+                    schedules = []
+                    for row in rows:
+                        last_executed = None
+                        if row[15]:
+                            last_executed = datetime.fromisoformat(row[15])
+                        
+                        next_execution = None
+                        if row[16]:
+                            next_execution = datetime.fromisoformat(row[16])
+                        
+                        specific_datetime = None
+                        if row[11]:
+                            specific_datetime = datetime.fromisoformat(row[11])
+                        
+                        schedules.append(Schedule(
+                            id=row[0],
+                            channel_id=row[1],
+                            guild_id=row[2],
+                            schedule_type=row[3],
+                            function_type=row[4],
+                            custom_message=row[5],
+                            pattern_type=row[6],
+                            hour=row[7],
+                            minute=row[8],
+                            day_of_week=row[9],
+                            day_of_month=row[10],
+                            specific_datetime=specific_datetime,
+                            is_active=bool(row[12]),
+                            created_by=row[13],
+                            created_at=datetime.fromisoformat(row[14]),
+                            last_executed=last_executed,
+                            next_execution=next_execution
+                        ))
+                    return schedules
+        except Exception as e:
+            logger.error(f"Failed to get schedules: {e}")
+            return []
+    
+    async def update_schedule_execution(self, schedule_id: int, execution_time: datetime) -> bool:
+        """Update schedule last execution time"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(
+                    'UPDATE schedules SET last_executed = ? WHERE id = ?',
+                    (execution_time, schedule_id)
+                )
+                await db.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to update schedule execution: {e}")
+            return False
+    
+    # Usage statistics
+    async def add_usage_stat(self, usage_stat: UsageStat) -> bool:
+        """Add usage statistics"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(
+                    'INSERT INTO usage_stats (guild_id, channel_id, feature_type, execution_time, success) VALUES (?, ?, ?, ?, ?)',
+                    (usage_stat.guild_id, usage_stat.channel_id, usage_stat.feature_type, usage_stat.execution_time, usage_stat.success)
+                )
+                await db.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to add usage stat: {e}")
+            return False
+    
+    async def close(self):
+        """Close database connection"""
+        pass
