@@ -37,11 +37,13 @@ class WebSearchTool(Tool):
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(
                     "https://api.search.brave.com/res/v1/web/search",
-                    headers={"X-Subscription-Token": self.api_key},
+                    headers={
+                        "X-Subscription-Token": self.api_key,
+                        "Accept": "application/json",
+                    },
                     params={
                         "q": query,
                         "count": 5,
-                        "search_lang": "ja",
                     },
                 )
                 response.raise_for_status()
@@ -61,7 +63,8 @@ class WebSearchTool(Tool):
             return ToolResult(success=True, data=results)
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"Brave Search API error: {e.response.status_code}")
+            body = e.response.text[:300]
+            logger.error(f"Brave Search API error: {e.response.status_code} — {body}")
             return ToolResult(success=False, error=f"検索APIエラー: {e.response.status_code}")
         except Exception as e:
             logger.error(f"Web search failed: {e}")
