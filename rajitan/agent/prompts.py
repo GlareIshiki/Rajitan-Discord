@@ -75,6 +75,30 @@ class AgentPromptBuilder:
             "このリクエストに応えることに集中してください。"
         )
 
+    def build_step_injection(
+        self, step: int, max_steps: int, original_request: str, tools_used: list
+    ) -> str:
+        """Build step-aware budget/reflection injection for the agent loop"""
+        remaining = max_steps - step - 1
+        parts = [f"【ステップ {step + 1}/{max_steps}、残り{remaining}】"]
+
+        # Every 3 steps: reflection prompt
+        if step % 3 == 0 and step > 0:
+            parts.append(
+                f"元のリクエスト：「{original_request}」\n"
+                "進捗確認: 目的は達成できた？同じツールを繰り返していない？"
+                "達成できたなら最終回答へ。"
+            )
+
+        # Near end: urgency
+        if remaining <= 3:
+            parts.append(
+                "残りステップが少ないです。達成できていれば最終回答を。"
+                "未達成なら最も重要なアクション1つに絞ってください。"
+            )
+
+        return "\n".join(parts)
+
     # --- Private section builders ---
 
     def _build_identity_section(self) -> str:
@@ -95,12 +119,18 @@ class AgentPromptBuilder:
 
 リクエストを受けたら、以下の順序で考えてください：
 
-1. 【理解】ユーザーが何を求めているか把握する。一文で要約できるか確認する
+1. 【理解】ユーザーが何を求めているか把握する
 2. 【判断】ツールが必要か判断する。雑談や質問ならツールを使わず直接回答する
-3. 【計画】複数のステップが必要なら、実行順序を決める
+3. 【計画】複数のステップが必要なら、最小限のステップ数で実行する計画を立てる
 4. 【実行】必要なツールを適切な引数で呼び出す。一度に1つのアクションに集中する
-5. 【確認】結果を確認する。ユーザーの元の目的を達成できたか判断する
-6. 【応答】結果を自然な言葉でユーザーに伝える"""
+5. 【確認】結果を確認する。期待通りでなければ別のアプローチを試す。成功したなら最終回答へ
+6. 【応答】結果を自然な言葉でユーザーに伝える
+
+### 重要な制約
+- あなたにはステップ数の上限があります（システムメッセージで通知されます）
+- 同じツールを3回以上連続で呼ぶのは禁止です
+- 「連投して」等の繰り返し依頼でも、send_messageは最大3回までです
+- 目的を達成したら、余ったステップがあっても即座に最終回答してください"""
 
     def _build_tool_usage_guide(self) -> str:
         return """## ツールの使い方
@@ -122,7 +152,7 @@ class AgentPromptBuilder:
     def _build_response_format_guide(self) -> str:
         return """## 応答ルール
 
-- 4行以内で簡潔に応答する
+- 通常の会話は4行以内で簡潔に。ただし情報が多い場合（クイズ結果、一覧表示など）は必要な分だけ書いてよい
 - キャラクターの口調を維持する
 - ツールの生データや内部情報をそのまま送らない。結果を自然な言葉でまとめる
 - 「〜を実行しました」「〜ツールを使用しました」のような機械的な報告はしない
@@ -135,6 +165,7 @@ class AgentPromptBuilder:
 - 待ちアクションがある場合、ユーザーのメッセージをその文脈で解釈する
   - 例: クイズ回答待ちなら「A」「A、B、C」はクイズの回答 → quiz_answerツールを使う
   - 例: 確認待ちなら「はい」「うん」は承認として処理する
+- 「メモ」にクイズ結果などの直近の情報がある場合、それを参照して回答する（新しいクイズを作らない）
 - 「今日のアクション履歴」を参照して、同じ操作の重複を避ける
 - 「知っていること」を活用して、ユーザーに合わせた応答をする
 - 重要な情報を学んだら、rememberツールで長期記憶に保存する"""

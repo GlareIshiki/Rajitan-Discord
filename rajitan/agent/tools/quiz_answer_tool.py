@@ -105,4 +105,14 @@ class QuizAnswerTool(Tool):
         summary = "\n".join(lines)
         summary += f"\n\n結果: {total_correct}/{total_questions}問正解"
 
+        # Save results to working memory for follow-up questions
+        if self.memory:
+            try:
+                await self.memory.add_context_note(
+                    channel_id,
+                    f"クイズ結果({username}): {summary}",
+                )
+            except Exception as e:
+                logger.warning(f"Failed to save quiz results to context: {e}")
+
         return ToolResult(success=True, data=summary)

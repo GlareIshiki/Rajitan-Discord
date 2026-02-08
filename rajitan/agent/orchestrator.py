@@ -71,6 +71,10 @@ class AgentOrchestrator:
         total_tokens = 0
         consecutive_errors = 0
         last_failed_tool: Optional[str] = None
+        tool_call_history: List[str] = []
+
+        # Reset per-execution tool call counts
+        self.tools.reset_call_counts()
 
         # 1. Build system prompt (structured thinking protocol)
         system_prompt = await self.prompt_builder.build_system_prompt(context)
@@ -93,12 +97,25 @@ class AgentOrchestrator:
                 logger.info("Context approaching limit, compacting...")
                 messages = self.context_manager.compact_context(messages)
 
-            # Goal reminder: every 4 steps, remind LLM of original request
-            if step > 0 and step % 4 == 0:
+            # Step-aware context injection: budget + reflection + planning
+            if step == 0 and self._looks_complex(user_message):
                 messages.append({
                     "role": "user",
-                    "content": self.prompt_builder.build_goal_reminder(user_message),
+                    "content": (
+                        f"【ステップ 1/{self.MAX_STEPS}】"
+                        "まず計画を立ててください。何のツールを使うか、"
+                        "何ステップ必要か考えてから実行してください。"
+                    ),
                 })
+            elif step > 0:
+                step_injection = self.prompt_builder.build_step_injection(
+                    step=step,
+                    max_steps=self.MAX_STEPS,
+                    original_request=user_message,
+                    tools_used=tools_used,
+                )
+                if step_injection:
+                    messages.append({"role": "user", "content": step_injection})
 
             # Adaptive max_tokens and tool availability
             step_max_tokens, step_tools = self._get_step_params(
@@ -193,6 +210,20 @@ class AgentOrchestrator:
                         consecutive_errors = 0
                         last_failed_tool = None
 
+                    # Track consecutive same-tool usage and warn
+                    tool_call_history.append(tc.name)
+                    consecutive_same = 0
+                    for past in reversed(tool_call_history):
+                        if past == tc.name:
+                            consecutive_same += 1
+                        else:
+                            break
+                    if consecutive_same >= 2 and result.success:
+                        content += (
+                            f"\n\n【注意】{tc.name}を{consecutive_same}回連続で使用中。"
+                            "本当に繰り返す必要がありますか？目的達成なら最終回答に進んでください。"
+                        )
+
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
@@ -247,6 +278,16 @@ class AgentOrchestrator:
             # Normal step: full thinking room
             return 1500, tool_definitions if tool_definitions else None
 
+    def _looks_complex(self, user_message: str) -> bool:
+        """Heuristic: does this request likely need multi-step tool use?"""
+        if len(user_message) < 10:
+            return False
+        simple_patterns = [
+            "こんにちは", "おはよう", "おやすみ", "ありがとう", "ただいま",
+            "元気?", "元気？", "ひま", "暇", "やあ", "よお",
+        ]
+        return not any(p in user_message for p in simple_patterns)
+
     def _build_tool_result_content(
         self,
         result: ToolResult,
@@ -254,8 +295,12 @@ class AgentOrchestrator:
         last_failed_tool: Optional[str],
         consecutive_errors: int,
     ) -> str:
-        """Build tool result content with error recovery hints when needed."""
+        """Build tool result content with verification nudges and error recovery."""
         content = result.to_content_string()
+
+        # Success: verification nudge
+        if result.success:
+            content += "\n（確認: この結果は期待通りか？目的達成なら最終回答へ）"
 
         # If same tool failed twice in a row, add a recovery hint
         if (

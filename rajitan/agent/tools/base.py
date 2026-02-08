@@ -38,6 +38,7 @@ class Tool(ABC):
     name: str = ""
     description: str = ""
     parameters: Dict[str, Any] = {}
+    max_calls_per_execution: int = 5  # Per-execution call limit (override in subclass)
 
     @abstractmethod
     async def execute(self, **kwargs) -> ToolResult:
@@ -61,6 +62,11 @@ class ToolRegistry:
 
     def __init__(self):
         self._tools: Dict[str, Tool] = {}
+        self._call_counts: Dict[str, int] = {}
+
+    def reset_call_counts(self):
+        """Reset per-execution call counts (called at start of each execute)"""
+        self._call_counts = {}
 
     def register(self, tool: Tool) -> None:
         if not tool.name:
@@ -74,12 +80,22 @@ class ToolRegistry:
         return self._tools.get(name)
 
     async def execute(self, name: str, **kwargs) -> ToolResult:
-        """Execute a tool by name"""
+        """Execute a tool by name, enforcing per-execution call limits"""
         tool = self.get(name)
         if tool is None:
             return ToolResult(success=False, error=f"Unknown tool: {name}")
+
+        count = self._call_counts.get(name, 0)
+        if count >= tool.max_calls_per_execution:
+            return ToolResult(
+                success=False,
+                error=f"このツールは1回の実行で{tool.max_calls_per_execution}回まで使用可能。上限に達した。",
+            )
+
         try:
-            return await tool.execute(**kwargs)
+            result = await tool.execute(**kwargs)
+            self._call_counts[name] = count + 1
+            return result
         except Exception as e:
             logger.error(f"Tool '{name}' execution failed: {e}")
             return ToolResult(success=False, error=str(e))

@@ -10,6 +10,7 @@ class SendMessageTool(Tool):
     """Discordメッセージ送信ツール"""
 
     name = "send_message"
+    max_calls_per_execution = 3
     description = "現在のチャンネルに追加のメッセージを送信する。長い応答を分割して送りたい場合や、途中経過を報告する場合に使う。"
     parameters = {
         "type": "object",
@@ -39,6 +40,7 @@ class AddReactionTool(Tool):
     """リアクション追加ツール"""
 
     name = "add_reaction"
+    max_calls_per_execution = 3
     description = "ユーザーのメッセージにリアクション（絵文字）を追加する。"
     parameters = {
         "type": "object",

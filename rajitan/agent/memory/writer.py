@@ -96,6 +96,22 @@ class AgentMemoryWriter:
         self, result: "AgentResult", context: "AgentContext"
     ):
         """ツール使用結果から待ちアクションを設定"""
+        # Log expired pending actions to context notes before clearing
+        try:
+            wm = await self.memory.get_working_memory(context.channel_id)
+            for action in wm.pending_actions:
+                if action.is_expired():
+                    logger.info(
+                        f"Pending action expired: {action.action_type.value} "
+                        f"in channel {context.channel_id}"
+                    )
+                    await self.memory.add_context_note(
+                        context.channel_id,
+                        f"期限切れ: {action.description}",
+                    )
+        except Exception as e:
+            logger.warning(f"Failed to check expired actions: {e}")
+
         # quiz_answerが使われた場合、pending_actionをクリア
         if "quiz_answer" in result.tools_used:
             await self.memory.clear_pending_actions(context.channel_id)

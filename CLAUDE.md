@@ -62,49 +62,29 @@ RajitanApplication (main.py)
   ├── QuizGenerator/Runner, MusicRecommender
   ├── EnhancedScheduleManager, TriggerManager
   ├── LeveMagiClient
-  ├── AgentOrchestrator ← DeepSeek/OpenAI + ToolRegistry(15tools) + 既存サービス
+  ├── MemoryManager (3層記憶: Redis + SQLite)
+  ├── AgentOrchestrator ← DeepSeek/OpenAI + ToolRegistry(20tools) + MemoryManager
   └── RajitanBot ← inject_dependencies() で全サービス注入
-```
-
-### ディレクトリ構造
-
-```
-rajitan/
-├── agent/         # AIエージェントシステム
-│   ├── orchestrator.py     # エージェントループ（MAX_STEPS=15）
-│   ├── prompts.py          # 思考プロトコル付きシステムプロンプト構築
-│   ├── context_manager.py  # コンテキストウィンドウ管理（トークン概算・圧縮）
-│   ├── llm/       # LLMプロバイダー抽象化（DeepSeek/OpenAI共通）
-│   ├── tools/     # ツールシステム（base.py: Tool ABC/ToolRegistry, 15ツール）
-│   └── memory/    # メモリ管理（Phase 2で実装予定）
-├── bot/           # Discord bot本体（client.py, commands.py, levemagi_commands.py）
-├── character/     # AIキャラクター管理・性格・プロンプト（8種: default〜rajitan）
-├── conversation/  # 会話トラッキング・分析・要約
-├── features/      # クイズ(quiz/)・音楽レコメンド(music/)・LeveMagi通知
-├── api/           # OpenAI・Spotify・YouTube クライアント
-├── storage/       # SQLite・Redis・Pydanticモデル・LeveMagi CRUD
-├── scheduler/     # EnhancedScheduleManager・TriggerManager
-├── nlp/           # レガシー: インテント分類（エージェント未使用時のフォールバック）
-├── web/           # FastAPI サーバー・認証・APIルート
-├── utils/         # ログ・設定(config.py)・バリデーション・デコレータ
-└── tests/         # pytest テスト（conftest.pyにモックfixtures）
 ```
 
 ## Agent System
 
 ### 処理フロー
 
-`on_message` → `_handle_mention_with_agent()` → `AgentOrchestrator.execute()` → LLM + Tool Loop
-
-### 思考プロトコル（prompts.py）
-
-LLMに構造化された思考プロセスを指示:
-1. 【理解】ユーザーのリクエストを把握
-2. 【判断】ツールが必要か判断
-3. 【計画】複数ステップなら実行順序を決定
-4. 【実行】ツール呼び出し
-5. 【確認】結果がユーザーの目的を達成したか検証
-6. 【応答】自然な言葉でユーザーに伝える
+```
+on_message
+  ├── (pending_action あり) → メンション不要でエージェント起動
+  └── (メンション検出)     → handle_mention → エージェント起動
+      ↓
+_handle_mention_with_agent()
+      ↓
+AgentOrchestrator.execute()
+  ├── システムプロンプト構築（キャラ + 思考プロトコル + 記憶 + 会話履歴）
+  ├── LLM呼び出し → ツール実行 → 結果追記（append-only）
+  ├── 4ステップごとにゴールリマインダー注入
+  ├── MAX_STEPS(15)到達 or 最終テキスト応答 → ループ終了
+  └── AgentMemoryWriter → 3層記憶に自動書き込み
+```
 
 ### エージェントループの仕組み（orchestrator.py）
 
@@ -112,29 +92,56 @@ LLMに構造化された思考プロセスを指示:
 - **適応的max_tokens**: 通常1500 → 終盤800 → 最終ステップはツール無効化しテキスト応答を強制
 - **目標追跡**: 4ステップごとにユーザーの元のリクエストをリマインダーとして注入
 - **エラー回復**: 同一ツール2回連続失敗で回復ヒントを注入
-- **コンテキスト管理**: 80Kトークン超過で古い交換を圧縮（context_manager.py）
+- **コンテキスト管理**: 80Kトークン超過で古い交換を圧縮（context_manager.py、日本語3文字≈1トークン）
 
-### 登録ツール（15個）
+### 登録ツール（20個）
 
 | Tool | 既存サービス | 機能 |
 |---|---|---|
 | `summary` | ConversationSummarizer | 会話要約 |
 | `quiz` | QuizGenerator/Runner | クイズ生成・実行 |
+| `quiz_answer` | QuizRunner + MemoryManager | クイズ回答処理・採点 |
 | `music` | MusicRecommender | 音楽レコメンド |
 | `schedule_create/list/delete` | EnhancedScheduleManager | スケジュールCRUD |
 | `task_add/complete/list` | LeveMagiClient | タスク管理 |
 | `project_list` | LeveMagiClient | プロジェクト一覧 |
 | `get_conversation` | ConversationTracker | 会話履歴取得 |
+| `search_conversation` | SQLite直接 | 会話検索 |
+| `get_user_messages` | SQLite直接 | ユーザー発言取得 |
 | `analyze_mood` | ConversationAnalyzer | 雰囲気分析 |
 | `character` | CharacterManager | 性格変更 |
 | `send_message` / `add_reaction` | Discord API | メッセージ送信・リアクション |
+| `remember` / `recall` | MemoryManager | 長期記憶の読み書き |
 
-- 新しいツールを追加: `Tool` ABCを継承 → `main.py` で `ToolRegistry.register()` → LLMが自動認識
-- ツール定義は起動時に全ロード、動的追加・削除しない
+新しいツールを追加する手順: `Tool` ABCを継承 → `main.py` で `ToolRegistry.register()` → LLMが自動認識。
+ツール定義は起動時に全ロード、動的追加・削除しない。
 
-### Intent Routing (Legacy Fallback)
+## 3層記憶システム（agent/memory/）
 
-`agent_orchestrator`がNoneの場合のみ使用。`IntentClassifier` → `IntentRouter` → `IntentHandler`
+エージェントの文脈理解を支える記憶アーキテクチャ。
+
+```
+┌─ Tier 1: ワーキングメモリ（短期）─────────────────┐
+│  メモリdict + Redis (TTL: 1時間)                   │
+│  例: クイズ回答待ち、確認待ち、コンテキストメモ     │
+├─ Tier 2: アクションログ（中期）───────────────────┤
+│  Redis (TTL: 6時間)                                │
+│  例: 要約した、クイズ出した、タスク追加した          │
+├─ Tier 3: 永続記憶（長期）─────────────────────────┤
+│  SQLite (agent_memories テーブル)                   │
+│  例: ユーザーの好み、チャンネルの特徴               │
+└───────────────────────────────────────────────────┘
+    読み込み: MemoryPromptIntegrator → システムプロンプトに注入
+    書き込み: AgentMemoryWriter → execute()完了後に自動 + ツール内
+```
+
+### メモリベースルーティング
+
+`on_message` で毎回 `has_pending_action(channel_id)` を確認。待ちアクション（クイズ回答待ち等）がある場合、**メンションなしでもエージェントが起動**する。これにより「クイズ出題→回答」のような自然なマルチターン対話が可能。
+
+### 記憶のプロンプト注入（prompt_integrator.py）
+
+トークン予算: ~700トークン（2100文字）。優先度: Tier 1（常に全量）→ Tier 2（直近5件）→ Tier 3（残り予算で最大5件）。
 
 ## Key Patterns
 
@@ -144,34 +151,38 @@ LLMに構造化された思考プロセスを指示:
 @with_retries(max_retries=2, delay=1.0)
 ```
 
+### デュアルストレージ（Redis + メモリフォールバック）
+
+RedisClient未接続時はメモリ辞書にフォールバック。QuizRunner, MemoryManagerが同パターン。
+`has_pending_action()` は高速パス（メモリdict → Redis）で毎メッセージ呼ばれても問題ない。
+
+### Intent Routing (Legacy Fallback)
+
+`agent_orchestrator`がNoneの場合のみ使用。`IntentClassifier` → `IntentRouter` → `IntentHandler`
+
 ## Key Files
 
-- `rajitan/main.py` — エントリーポイント。ProcessManager + RajitanApplication + エージェント初期化（DeepSeek/OpenAI分岐）
-- `rajitan/bot/client.py` — RajitanBot。メンション → `_handle_mention_with_agent()` → AgentOrchestrator
-- `rajitan/agent/orchestrator.py` — エージェントループ。思考→ツール→検証→応答
-- `rajitan/agent/prompts.py` — AgentPromptBuilder。思考プロトコル・エラー対応・応答ルールを含むシステムプロンプト構築
-- `rajitan/agent/context_manager.py` — ContextManager。トークン概算（日本語3文字≈1トークン）・コンテキスト圧縮
-- `rajitan/agent/llm/openai_provider.py` — OpenAI互換API実装（DeepSeek/OpenAI共用）
+- `rajitan/main.py` — エントリーポイント。全サービス初期化、DeepSeek/OpenAI分岐、ツール登録
+- `rajitan/bot/client.py` — RajitanBot。メンション/メモリベースルーティング → AgentOrchestrator
+- `rajitan/agent/orchestrator.py` — エージェントループ（MAX_STEPS=15）
+- `rajitan/agent/prompts.py` — システムプロンプト構築（キャラ + 思考プロトコル + 記憶 + 会話）
+- `rajitan/agent/memory/manager.py` — MemoryManager（3層記憶の読み書き統合）
+- `rajitan/agent/memory/writer.py` — AgentMemoryWriter（execute後の自動書き込み、ツール→待ちアクションマッピング）
+- `rajitan/agent/memory/prompt_integrator.py` — 記憶→システムプロンプト変換
 - `rajitan/agent/tools/base.py` — Tool ABC、ToolResult、ToolRegistry
+- `rajitan/agent/llm/openai_provider.py` — OpenAI互換API実装（DeepSeek/OpenAI共用）
 - `rajitan/utils/config.py` — .envからの設定読み込み
-- `rajitan/utils/validators.py` — 入力バリデーション一元管理
 
 ## Web API (FastAPI)
 
 `API_ENABLED=true` で起動。RajitanWebUI（Next.js）からアクセスされる。
 `app_state` dictにサービス参照を格納し、ルートハンドラから `app_state.get("key")` でアクセス。
 
-- `rajitan/web/server.py` — FastAPIアプリ作成、CORS、サービスstate注入
-- `rajitan/web/auth.py` — Discord OAuth認証（Redisセッション）
-- `rajitan/web/routes/bot.py` — `/api/bot/stats`, `/api/bot/guilds`, `/api/bot/activity`, `/api/bot/stats/users`
-- `rajitan/web/routes/levemagi.py` — `/api/levemagi/*` LeveMagi CRUD
-- `rajitan/web/routes/calendar.py` — カレンダー関連
-
 ## Storage
 
-**SQLite** (`storage/sqlite_client.py`): guilds, channels, characters, schedules, schedule_executions, usage_stats, LeveMagiテーブル群
-**Redis** (`storage/redis_client.py`): 会話データ、セッション、実行履歴。未接続時はメモリ辞書にフォールバック
-**LeveMagi** (`storage/levemagi_client.py`): lm_users, lm_nuts, lm_leaves, lm_trunks, lm_roots, lm_portals, lm_resources, lm_tags, lm_worklogs
+- **SQLite** (`storage/sqlite_client.py`): guilds, channels, characters, schedules, usage_stats, agent_memories, LeveMagiテーブル群
+- **Redis** (`storage/redis_client.py`): 会話データ、セッション、ワーキングメモリ、アクションログ。未接続時はメモリ辞書にフォールバック
+- **注意**: VPSのSQLiteバージョンが古いため、UNIQUE制約に式（COALESCE等）を使わないこと。カラムをNOT NULL DEFAULT ''にして単純なカラム参照で対応する
 
 ## Environment Variables
 
@@ -192,19 +203,18 @@ API: `API_ENABLED=true`, `API_HOST`, `API_PORT=8000`, `API_CORS_ORIGINS`
 
 ## Deployment
 
-- **Rajitan-Discord** → XServer VPS `85.131.243.117`（Bot + FastAPI常時起動、systemd管理）
+- **Rajitan-Discord** → XServer VPS（Bot + FastAPI常時起動、systemd管理）
 - **RajitanWebUI** → Vercel（GitHub連携で自動デプロイ）
 - **API URL**: `https://api.glareishiki.com` → nginx (HTTPS:443) → FastAPI (localhost:8000)
-- **SSL**: Let's Encrypt (certbot自動更新)
 
 ### VPS運用コマンド（systemd）
 
 ```bash
 # サービス管理
-sudo systemctl start rajitan       # 起動
-sudo systemctl stop rajitan        # 停止
-sudo systemctl restart rajitan     # 再起動
-sudo systemctl status rajitan      # 状態確認
+sudo systemctl start rajitan
+sudo systemctl stop rajitan
+sudo systemctl restart rajitan
+sudo systemctl status rajitan
 
 # ログ確認
 sudo journalctl -u rajitan -f                    # リアルタイム
@@ -214,8 +224,7 @@ sudo journalctl -u rajitan --since "1 hour ago"  # 直近1時間
 cd ~/Rajitan-Discord && git pull && sudo systemctl restart rajitan
 ```
 
-- サービス定義: `/etc/systemd/system/rajitan.service`（ソース: `rajitan.service`）
-- クラッシュ時は10秒後に自動再起動、VPS再起動時も自動起動
+サービス定義: `/etc/systemd/system/rajitan.service`。クラッシュ時は10秒後に自動再起動。
 
 ## 関連リポジトリ
 
