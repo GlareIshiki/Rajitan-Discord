@@ -105,7 +105,7 @@ class ResponseGate:
             messages=[{"role": "user", "content": prompt}],
             max_tokens=5,
             temperature=0,
-            thinking=False,
+            thinking=True,
         )
         if result is None:
             return False
