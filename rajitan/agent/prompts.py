@@ -182,12 +182,11 @@ class AgentPromptBuilder:
             if messages:
                 convo_lines = []
                 for m in messages:
-                    if not m.author.bot:
-                        timestamp = m.created_at.strftime("%H:%M")
-                        content = m.content[:200] if m.content else "(添付/embed)"
-                        convo_lines.append(
-                            f"[{timestamp}] {m.author.display_name}: {content}"
-                        )
+                    timestamp = m.created_at.strftime("%H:%M")
+                    content = m.content[:200] if m.content else "(添付/embed)"
+                    convo_lines.append(
+                        f"[{timestamp}] {m.author.display_name}: {content}"
+                    )
                 if convo_lines:
                     return "## 最近の会話（直近15件）\n" + "\n".join(convo_lines)
         except Exception as e:
