@@ -259,8 +259,14 @@ class EnhancedScheduleManager:
             recent_messages = await self.bot.conversation_tracker.get_recent_conversation(
                 schedule.channel_id, duration_minutes=60
             )
-            
-            if len(recent_messages) < 15:
+
+            # Fallback to Discord channel history if insufficient tracked data
+            if len(recent_messages) < 5:
+                recent_messages = await self.bot.fetch_discord_history_as_messages(
+                    channel, limit=50
+                )
+
+            if len(recent_messages) < 5:
                 logger.info(f"Not enough conversation data for quiz in channel {schedule.channel_id}")
                 await channel.send("📅 定期クイズのお時間ですが、会話データが不足しているため、今回はスキップします。")
                 return True
@@ -300,28 +306,50 @@ class EnhancedScheduleManager:
             if not self.bot:
                 logger.error("Bot instance not available for schedule execution")
                 return False
-            
+
             channel = self.bot.get_channel(int(schedule.channel_id))
             if not channel:
                 logger.error(f"Channel {schedule.channel_id} not found")
                 return False
-            
+
             # Get recent conversation for mood analysis
             recent_messages = await self.bot.conversation_tracker.get_recent_conversation(
                 schedule.channel_id, duration_minutes=30
             )
-            
+
+            # Fallback to Discord channel history if no tracked data
+            if not recent_messages:
+                recent_messages = await self.bot.fetch_discord_history_as_messages(
+                    channel, limit=30
+                )
+
             if not recent_messages:
                 await channel.send("📅 定期音楽推薦のお時間です♪\n\n現在の雰囲気に合った音楽をおすすめしたいのですが、最近の会話が見つからないため、今回はスキップします。")
                 return True
-            
-            # Generate music recommendation (placeholder for now)
-            recommendation_text = "📅 定期音楽推薦のお時間です♪\n\n現在の雰囲気に合った音楽をおすすめするね♪\n（音楽推薦機能は開発中です）"
-            await channel.send(recommendation_text)
-            
-            logger.info(f"Music recommendation executed for channel {schedule.channel_id}")
-            return True
-                
+
+            # Check if music recommender is available
+            if not self.bot.music_recommender:
+                logger.warning("Music recommender not available, using fallback message")
+                await channel.send("📅 定期音楽推薦のお時間です♪\n\n（音楽推薦機能の設定が必要です）")
+                return True
+
+            # Generate music recommendation
+            recommendation = await self.bot.music_recommender.generate_recommendation(
+                guild_id=schedule.guild_id,
+                channel_id=schedule.channel_id,
+                messages=recent_messages
+            )
+
+            if recommendation:
+                formatted = self.bot.music_recommender.format_recommendation_for_discord(recommendation)
+                intro = "📅 定期音楽推薦のお時間です♪\n\n"
+                await channel.send(intro + formatted)
+                logger.info(f"Music recommendation executed for channel {schedule.channel_id}")
+                return True
+            else:
+                await channel.send("📅 定期音楽推薦のお時間です♪\n\n今の雰囲気にぴったりの曲が見つからなかったみたい。また次回ね！")
+                return True
+
         except Exception as e:
             logger.error(f"Error executing music function: {e}")
             return False

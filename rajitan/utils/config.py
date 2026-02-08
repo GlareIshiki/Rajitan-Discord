@@ -44,6 +44,12 @@ class Config:
         self.quiz_interval = int(os.getenv("QUIZ_INTERVAL", "3600"))
         self.music_interval = int(os.getenv("MUSIC_INTERVAL", "2700"))
 
+        # API Server Configuration
+        self.api_host = os.getenv("API_HOST", "0.0.0.0")
+        self.api_port = int(os.getenv("API_PORT", "8000"))
+        self.api_cors_origins = os.getenv("API_CORS_ORIGINS", "http://localhost:3000").split(",")
+        self.api_enabled = os.getenv("API_ENABLED", "True").lower() == "true"
+
 
 # Global config instance
 config = Config()

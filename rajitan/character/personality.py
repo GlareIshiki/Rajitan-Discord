@@ -6,6 +6,7 @@ from rajitan.character.prompts import PERSONALITY_TRAITS
 class PersonalityType(str, Enum):
     """Personality types for characters"""
     DEFAULT = "default"
+    RAJITAN = "rajitan"
     CHEERFUL = "cheerful"
     CALM = "calm"
     WITTY = "witty"
@@ -129,8 +130,12 @@ class PersonalityManager:
     
     def customize_prompt_for_personality(self, base_prompt: str, personality_type: str) -> str:
         """Customize prompt based on personality type"""
+        # rajitan personality has its own dedicated prompt, no trait-based additions needed
+        if personality_type == "rajitan":
+            return base_prompt
+
         traits = self.get_personality_traits(personality_type)
-        
+
         additions = []
         
         if traits["energy"] > 0.7:

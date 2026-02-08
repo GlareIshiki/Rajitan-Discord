@@ -3,6 +3,7 @@ import signal
 import sys
 import os
 import psutil
+import uvicorn
 from typing import Optional
 from pathlib import Path
 from rajitan.bot.client import RajitanBot
@@ -16,8 +17,13 @@ from rajitan.conversation.analyzer import ConversationAnalyzer
 from rajitan.conversation.summarizer import ConversationSummarizer
 from rajitan.features.quiz.generator import QuizGenerator
 from rajitan.features.quiz.runner import QuizRunner
-from rajitan.scheduler.manager import SchedulerManager
 from rajitan.scheduler.enhanced_manager import EnhancedScheduleManager
+from rajitan.scheduler.trigger_manager import TriggerManager
+from rajitan.features.music.recommender import MusicRecommender
+from rajitan.api.youtube_client import YouTubeClient
+from rajitan.api.spotify_client import SpotifyClient
+from rajitan.storage.levemagi_client import LeveMagiClient
+from rajitan.web.server import create_app, app_state
 from rajitan.utils.logger import get_logger
 from rajitan.utils.config import get_config
 
@@ -84,7 +90,7 @@ class ProcessManager:
 
 class RajitanApplication:
     """Main application class for Rajitan Discord Bot"""
-    
+
     def __init__(self):
         self.bot: Optional[RajitanBot] = None
         self.db_client: Optional[SQLiteClient] = None
@@ -96,8 +102,13 @@ class RajitanApplication:
         self.conversation_summarizer: Optional[ConversationSummarizer] = None
         self.quiz_generator: Optional[QuizGenerator] = None
         self.quiz_runner: Optional[QuizRunner] = None
-        self.scheduler_manager: Optional[SchedulerManager] = None
         self.enhanced_schedule_manager: Optional[EnhancedScheduleManager] = None
+        self.trigger_manager: Optional[TriggerManager] = None
+        self.music_recommender: Optional[MusicRecommender] = None
+        self.youtube_client: Optional[YouTubeClient] = None
+        self.spotify_client: Optional[SpotifyClient] = None
+        self.levemagi_client: Optional[LeveMagiClient] = None
+        self.fastapi_app = None
         self.process_manager = ProcessManager()
         self.running = False
     
@@ -148,15 +159,30 @@ class RajitanApplication:
             logger.info("Initializing feature services...")
             self.quiz_generator = QuizGenerator(self.openai_client, self.character_manager)
             self.quiz_runner = QuizRunner(self.redis_client)
+
+            # Initialize music recommendation services
+            logger.info("Initializing music services...")
+            self.youtube_client = YouTubeClient()
+            self.spotify_client = SpotifyClient()
+            self.music_recommender = MusicRecommender(
+                self.openai_client,
+                self.character_manager,
+                self.youtube_client,
+                self.spotify_client
+            )
             
+            # Initialize LeveMagi client
+            logger.info("Initializing LeveMagi client...")
+            self.levemagi_client = LeveMagiClient(self.db_client.db_path)
+
             # Initialize Discord bot first
             logger.info("Initializing Discord bot...")
             self.bot = RajitanBot()
             
             # Initialize scheduler with bot instance
             logger.info("Initializing scheduler...")
-            self.scheduler_manager = SchedulerManager()
             self.enhanced_schedule_manager = EnhancedScheduleManager(self.db_client, self.bot)
+            self.trigger_manager = TriggerManager(self.bot)
             
             # Inject dependencies into bot
             self.bot.inject_dependencies(
@@ -167,16 +193,32 @@ class RajitanApplication:
                 conversation_summarizer=self.conversation_summarizer,
                 quiz_generator=self.quiz_generator,
                 quiz_runner=self.quiz_runner,
-                scheduler_manager=self.scheduler_manager,
-                enhanced_schedule_manager=self.enhanced_schedule_manager
+                enhanced_schedule_manager=self.enhanced_schedule_manager,
+                trigger_manager=self.trigger_manager,
+                music_recommender=self.music_recommender,
+                levemagi_client=self.levemagi_client
             )
             
             # Setup commands
             await setup_commands(self.bot)
-            
-            # Setup automated features
-            await self._setup_automated_features()
-            
+
+            # Setup LeveMagi commands
+            from rajitan.bot.levemagi_commands import setup as setup_levemagi_commands
+            await setup_levemagi_commands(self.bot)
+
+            # Initialize FastAPI server
+            if config.api_enabled:
+                logger.info("Initializing FastAPI server...")
+                self.fastapi_app = create_app()
+                app_state["bot"] = self.bot
+                app_state["db_client"] = self.db_client
+                app_state["redis_client"] = self.redis_client
+                app_state["character_manager"] = self.character_manager
+                app_state["conversation_tracker"] = self.conversation_tracker
+                app_state["conversation_summarizer"] = self.conversation_summarizer
+                app_state["enhanced_schedule_manager"] = self.enhanced_schedule_manager
+                app_state["levemagi_client"] = self.levemagi_client
+
             logger.info("Rajitan application initialized successfully")
             
         except Exception as e:
@@ -185,92 +227,37 @@ class RajitanApplication:
             self.process_manager.remove_pid_file()
             raise
     
-    async def _setup_automated_features(self):
-        """Setup automated feature execution"""
-        try:
-            # This would set up automatic triggers for features
-            # For now, we'll implement a simple version
-            
-            async def check_and_execute_features(channel_id: str, feature_type: str):
-                """Check and execute features automatically"""
-                try:
-                    if feature_type == "summary":
-                        await self._auto_execute_summary(channel_id)
-                    elif feature_type == "quiz":
-                        await self._auto_execute_quiz(channel_id)
-                except Exception as e:
-                    logger.error(f"Error in auto feature execution: {e}")
-            
-            # Schedule feature checks (would be more sophisticated in production)
-            # This is a simplified version for demonstration
-            
-            logger.info("Automated features setup completed")
-            
-        except Exception as e:
-            logger.error(f"Failed to setup automated features: {e}")
-    
-    async def _auto_execute_summary(self, channel_id: str):
-        """Automatically execute summary if conditions are met"""
-        try:
-            # Check if summary should be executed
-            should_execute = await self.conversation_tracker.should_execute_feature(
-                channel_id, "summary"
-            )
-            
-            if not should_execute:
-                return
-            
-            # Get conversation data
-            summary_data = await self.conversation_tracker.get_conversation_summary_data(channel_id)
-            
-            if not summary_data or not summary_data["messages"]:
-                return
-            
-            # Get guild ID (simplified - would need proper channel->guild mapping)
-            # For now, skip auto-summary and only do manual
-            logger.debug(f"Auto summary check for channel {channel_id} - conditions not met")
-            
-        except Exception as e:
-            logger.error(f"Error in auto summary execution: {e}")
-    
-    async def _auto_execute_quiz(self, channel_id: str):
-        """Automatically execute quiz if conditions are met"""
-        try:
-            # Check if quiz should be executed
-            should_execute = await self.conversation_tracker.should_execute_feature(
-                channel_id, "quiz"
-            )
-            
-            if not should_execute:
-                return
-            
-            # Check if quiz is already active
-            if await self.quiz_runner.is_quiz_active(channel_id):
-                return
-            
-            # For now, skip auto-quiz and only do manual
-            logger.debug(f"Auto quiz check for channel {channel_id} - conditions not met")
-            
-        except Exception as e:
-            logger.error(f"Error in auto quiz execution: {e}")
-    
     async def start(self):
         """Start the application"""
         try:
             if self.running:
                 logger.warning("Application is already running")
                 return
-            
+
             logger.info("Starting Rajitan application...")
-            
-            # Start schedulers
-            await self.scheduler_manager.start()
+
+            # Start schedulers and trigger manager
             await self.enhanced_schedule_manager.start()
-            
-            # Start Discord bot
+            await self.trigger_manager.start()
+
             self.running = True
-            await self.bot.start(config.discord_bot_token)
-            
+
+            # Start Discord bot + FastAPI concurrently
+            tasks = [self.bot.start(config.discord_bot_token)]
+
+            if config.api_enabled and self.fastapi_app:
+                uvicorn_config = uvicorn.Config(
+                    self.fastapi_app,
+                    host=config.api_host,
+                    port=config.api_port,
+                    log_level="info",
+                )
+                server = uvicorn.Server(uvicorn_config)
+                tasks.append(server.serve())
+                logger.info(f"Starting API server on {config.api_host}:{config.api_port}")
+
+            await asyncio.gather(*tasks)
+
         except Exception as e:
             logger.error(f"Failed to start application: {e}")
             await self.shutdown()
@@ -286,11 +273,18 @@ class RajitanApplication:
             self.running = False
             
             # Shutdown services in reverse order
+            if self.trigger_manager:
+                await self.trigger_manager.stop()
+
             if self.enhanced_schedule_manager:
                 await self.enhanced_schedule_manager.stop()
-            
-            if self.scheduler_manager:
-                await self.scheduler_manager.stop()
+
+            # Close API clients
+            if self.youtube_client:
+                await self.youtube_client.close()
+
+            if self.spotify_client:
+                await self.spotify_client.close()
             
             if self.bot:
                 await self.bot.shutdown()
@@ -328,6 +322,11 @@ def signal_handler(signum, frame):
 async def main():
     """Main entry point"""
     try:
+        # Enable discord.py debug logging
+        import logging
+        logging.getLogger("discord.gateway").setLevel(logging.DEBUG)
+        logging.getLogger("discord.client").setLevel(logging.DEBUG)
+
         # Setup signal handlers
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)

@@ -1,4 +1,5 @@
 import asyncio
+import urllib.parse
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from rajitan.storage.models import Message, MusicRecommendation
@@ -50,13 +51,20 @@ class MusicRecommender:
                 return None
             
             # Try to find actual URL if possible
+            title = music_data.get("title", "Unknown")
+            artist = music_data.get("artist", "Unknown")
             url = await self._find_music_url(music_data)
-            
+
+            # Fallback to YouTube search URL with proper encoding
+            if not url:
+                search_query = urllib.parse.quote(f"{artist} {title}")
+                url = f"https://www.youtube.com/results?search_query={search_query}"
+
             # Create recommendation object
             recommendation = MusicRecommendation(
-                title=music_data.get("title", "Unknown"),
-                artist=music_data.get("artist", "Unknown"),
-                url=url or f"https://www.youtube.com/results?search_query={music_data.get('title', '')}+{music_data.get('artist', '')}",
+                title=title,
+                artist=artist,
+                url=url,
                 reason=music_data.get("reason", "会話の雰囲気にふさわしい楽曲です。"),
                 channel_id=channel_id,
                 created_at=datetime.now()
@@ -161,10 +169,19 @@ class MusicRecommender:
             formatted += f"**{recommendation.title}**\n"
             formatted += f"アーティスト: {recommendation.artist}\n\n"
             formatted += f"💬 {recommendation.reason}\n\n"
-            formatted += f"🔗 {recommendation.url}"
-            
+
+            # Distinguish between direct link and search link
+            if "youtube.com/results?" in recommendation.url:
+                formatted += f"🔍 [YouTubeで検索]({recommendation.url})"
+            elif "spotify.com" in recommendation.url:
+                formatted += f"🎧 [Spotifyで聴く]({recommendation.url})"
+            elif "youtube.com/watch" in recommendation.url:
+                formatted += f"▶️ [YouTubeで聴く]({recommendation.url})"
+            else:
+                formatted += f"🔗 {recommendation.url}"
+
             return formatted
-            
+
         except Exception as e:
             logger.error(f"Failed to format music recommendation: {e}")
             return "音楽推薦の表示にエラーが発生しました。"

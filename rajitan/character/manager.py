@@ -178,14 +178,12 @@ class CharacterManager:
             character.personality_traits["type"] = personality_type
             character.personality_traits["traits"] = self.personality_manager.get_personality_traits(personality_type)
             
-            # Update system prompt if provided
+            # Update system prompt
             if system_prompt and validate_system_prompt(system_prompt):
                 character.system_prompt = system_prompt
             else:
-                # Re-customize prompt based on new personality
-                character.system_prompt = self.personality_manager.customize_prompt_for_personality(
-                    character.system_prompt, personality_type
-                )
+                # Generate fresh prompt for the new personality type
+                character.system_prompt = get_system_prompt(character.name, personality_type)
             
             character.updated_at = datetime.now()
             

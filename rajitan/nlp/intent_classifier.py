@@ -14,6 +14,10 @@ class IntentType(str, Enum):
     SUMMARY_REQUEST = "summary_request"
     QUIZ_REQUEST = "quiz_request"
     MUSIC_REQUEST = "music_request"
+    TASK_ADD = "task_add"
+    TASK_COMPLETE = "task_complete"
+    TASK_LIST = "task_list"
+    PROJECT_LIST = "project_list"
     GENERAL_CHAT = "general_chat"
     UNKNOWN = "unknown"
 
@@ -90,8 +94,20 @@ class IntentClassifier:
    
 4. music_request: 音楽推薦の依頼
    - 例: "音楽をおすすめして", "曲を教えて", "BGMを提案して"
-   
-5. general_chat: 一般的な会話
+
+5. task_add: タスク追加の依頼
+   - 例: "タスク追加 READMEを書く", "やること追加して", "タスク「○○」を作って"
+
+6. task_complete: タスク完了の報告
+   - 例: "タスク完了", "○○ 完了", "done"
+
+7. task_list: タスク一覧の表示依頼
+   - 例: "今日のタスク", "タスク一覧", "やること教えて"
+
+8. project_list: プロジェクト一覧の表示依頼
+   - 例: "プロジェクト一覧", "プロジェクト見せて"
+
+9. general_chat: 一般的な会話
    - 例: "こんにちは", "元気？", "今日はどう？"
 
 スケジュール設定の場合は、追加で以下の情報も抽出してください：

@@ -136,9 +136,12 @@ class RajitanBot(commands.Bot):
     
     async def on_message(self, message: discord.Message):
         """Handle incoming messages"""
+        print(f"[DEBUG on_message] received from {message.author}: {message.content[:50] if message.content else '(empty)'}", flush=True)
         if message is None or message.author is None:
             return
         if self.conversation_tracker is None:
+            print("[DEBUG on_message] conversation_tracker is None!", flush=True)
+            logger.warning("conversation_tracker is None, ignoring message")
             return
         try:
             # Ignore bot messages

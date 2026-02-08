@@ -77,13 +77,13 @@ def validate_character_name(name: str) -> bool:
     """Validate character name"""
     if not name or not isinstance(name, str):
         return False
-    
+
     # Check length
     if len(name) < 1 or len(name) > 32:
         return False
-    
-    # Check for valid characters (alphanumeric, spaces, basic punctuation)
-    if not re.match(r'^[a-zA-Z0-9\s\-_]+$', name):
+
+    # Reject control characters only (allow Unicode including Japanese)
+    if re.search(r'[\x00-\x1f\x7f-\x9f]', name):
         return False
-    
+
     return True
