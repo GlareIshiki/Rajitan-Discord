@@ -105,38 +105,15 @@ class ResponseGate:
             recent_messages=recent_messages,
             new_message=new_message,
         )
-        # Stage 1: Thinking mode — deep reasoning
         result = await self.llm.chat_completion(
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=10,
-            temperature=0,
-            thinking=True,
-        )
-
-        # If content came back directly, use it
-        if result and (result.content or "").strip():
-            answer = result.content.strip().upper()
-            return self._parse_participation(answer, new_message)
-
-        # Stage 2: Feed reasoning to non-thinking for clean extraction
-        reasoning = (result.reasoning_content or "") if result else ""
-        if not reasoning:
-            logger.warning(f"Participation: no reasoning, defaulting to skip")
-            return "skip"
-
-        extract = await self.llm.chat_completion(
-            messages=[{
-                "role": "user",
-                "content": f"以下の分析に基づいて、YES、SKIP、LEAVEのどれか1つだけ答えてください。\n\n{reasoning}",
-            }],
             max_tokens=5,
             temperature=0,
             thinking=False,
         )
-        if extract is None:
+        if result is None:
             return "skip"
-        answer = (extract.content or "").strip().upper()
-        logger.debug(f"Participation stage2 answer: '{answer}'")
+        answer = (result.content or "").strip().upper()
         return self._parse_participation(answer, new_message)
 
     def _parse_participation(self, answer: str, new_message: str) -> str:
