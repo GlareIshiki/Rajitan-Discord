@@ -198,6 +198,8 @@ class RajitanApplication:
             from rajitan.agent.tools.discord_tool import SendMessageTool, AddReactionTool
             from rajitan.agent.tools.quiz_answer_tool import QuizAnswerTool
             from rajitan.agent.tools.memory_tool import RememberTool, RecallTool
+            from rajitan.agent.tools.time_tool import GetTimeTool
+            from rajitan.agent.tools.web_search_tool import WebSearchTool
             from rajitan.agent.memory.manager import MemoryManager
             from rajitan.agent.orchestrator import AgentOrchestrator
 
@@ -240,6 +242,8 @@ class RajitanApplication:
             tool_registry.register(QuizAnswerTool(self.quiz_runner, memory_manager))
             tool_registry.register(RememberTool(memory_manager))
             tool_registry.register(RecallTool(memory_manager))
+            tool_registry.register(GetTimeTool())
+            tool_registry.register(WebSearchTool())
 
             # Response quality gate (LLM-based YES/NO check before sending)
             from rajitan.agent.response_gate import ResponseGate

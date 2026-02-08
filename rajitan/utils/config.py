@@ -47,6 +47,10 @@ class Config:
         self.quiz_interval = int(os.getenv("QUIZ_INTERVAL", "3600"))
         self.music_interval = int(os.getenv("MUSIC_INTERVAL", "2700"))
 
+        # Google Custom Search Configuration
+        self.google_search_api_key = os.getenv("GOOGLE_SEARCH_API_KEY")
+        self.google_search_cx = os.getenv("GOOGLE_SEARCH_CX")
+
         # API Server Configuration
         self.api_host = os.getenv("API_HOST", "0.0.0.0")
         self.api_port = int(os.getenv("API_PORT", "8000"))
