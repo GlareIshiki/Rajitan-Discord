@@ -184,6 +184,48 @@ class RajitanApplication:
             self.enhanced_schedule_manager = EnhancedScheduleManager(self.db_client, self.bot)
             self.trigger_manager = TriggerManager(self.bot)
             
+            # Initialize agent system
+            logger.info("Initializing agent system...")
+            from rajitan.agent.llm.openai_provider import OpenAIProvider
+            from rajitan.agent.tools.base import ToolRegistry
+            from rajitan.agent.tools.summary_tool import SummaryTool
+            from rajitan.agent.tools.quiz_tool import QuizTool
+            from rajitan.agent.tools.music_tool import MusicTool
+            from rajitan.agent.tools.schedule_tool import ScheduleCreateTool, ScheduleListTool, ScheduleDeleteTool
+            from rajitan.agent.tools.task_tool import TaskAddTool, TaskCompleteTool, TaskListTool, ProjectListTool
+            from rajitan.agent.tools.conversation_tool import GetConversationTool, AnalyzeMoodTool
+            from rajitan.agent.tools.character_tool import CharacterTool
+            from rajitan.agent.tools.discord_tool import SendMessageTool, AddReactionTool
+            from rajitan.agent.orchestrator import AgentOrchestrator
+
+            llm_provider = OpenAIProvider(self.openai_client.client, self.openai_client.model)
+            tool_registry = ToolRegistry()
+
+            # Register all tools at startup (never add/remove dynamically)
+            tool_registry.register(SummaryTool(self.conversation_summarizer, self.conversation_tracker))
+            tool_registry.register(QuizTool(self.quiz_generator, self.quiz_runner, self.conversation_tracker))
+            tool_registry.register(MusicTool(self.music_recommender, self.conversation_tracker))
+            tool_registry.register(ScheduleCreateTool(self.enhanced_schedule_manager))
+            tool_registry.register(ScheduleListTool(self.enhanced_schedule_manager))
+            tool_registry.register(ScheduleDeleteTool(self.enhanced_schedule_manager))
+            tool_registry.register(TaskAddTool(self.levemagi_client))
+            tool_registry.register(TaskCompleteTool(self.levemagi_client))
+            tool_registry.register(TaskListTool(self.levemagi_client))
+            tool_registry.register(ProjectListTool(self.levemagi_client))
+            tool_registry.register(GetConversationTool(self.conversation_tracker))
+            tool_registry.register(AnalyzeMoodTool(self.conversation_tracker, self.conversation_analyzer))
+            tool_registry.register(CharacterTool(self.character_manager))
+            tool_registry.register(SendMessageTool())
+            tool_registry.register(AddReactionTool())
+
+            agent_orchestrator = AgentOrchestrator(
+                llm_provider=llm_provider,
+                tool_registry=tool_registry,
+                character_manager=self.character_manager,
+                conversation_tracker=self.conversation_tracker,
+            )
+            logger.info(f"Agent system initialized with {len(tool_registry)} tools")
+
             # Inject dependencies into bot
             self.bot.inject_dependencies(
                 db_client=self.db_client,
@@ -196,7 +238,8 @@ class RajitanApplication:
                 enhanced_schedule_manager=self.enhanced_schedule_manager,
                 trigger_manager=self.trigger_manager,
                 music_recommender=self.music_recommender,
-                levemagi_client=self.levemagi_client
+                levemagi_client=self.levemagi_client,
+                agent_orchestrator=agent_orchestrator,
             )
             
             # Setup commands

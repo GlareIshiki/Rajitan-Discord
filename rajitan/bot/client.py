@@ -49,6 +49,7 @@ class RajitanBot(commands.Bot):
         self.start_time = None
         self.ready = False
         self.intent_router = None
+        self.agent_orchestrator = None
     
     def inject_dependencies(self, **dependencies):
         """Inject service dependencies"""
@@ -189,7 +190,7 @@ class RajitanBot(commands.Bot):
             logger.error(f"Error handling message: {e}")
     
     async def handle_mention(self, message: discord.Message):
-        """Handle when bot is mentioned"""
+        """Handle when bot is mentioned — routes through agent orchestrator"""
         if message is None or message.guild is None or message.channel is None:
             return
         if self.conversation_tracker is None or self.character_manager is None:
@@ -197,11 +198,10 @@ class RajitanBot(commands.Bot):
         try:
             guild_id = str(message.guild.id)
             channel_id = str(message.channel.id)
-            
+
             # Extract message content without mention
             content = message.content
             if self.user is not None:
-                # Remove bot mention from content
                 mention_patterns = [
                     f"<@{self.user.id}>",
                     f"<@!{self.user.id}>",
@@ -210,20 +210,66 @@ class RajitanBot(commands.Bot):
                 ]
                 for pattern in mention_patterns:
                     content = content.replace(pattern, "").strip()
-            
-            # If no content after removing mention, use a default message
+
             if not content:
-                content = "Hello! How can I help you today?"
-            
-            # Process natural language intent
-            await self.process_mention_with_nlp(message, content)
-            
+                content = "こんにちは！"
+
+            # Route through agent orchestrator if available
+            if self.agent_orchestrator:
+                await self._handle_mention_with_agent(message, content)
+            else:
+                # Fallback to legacy NLP processing
+                await self.process_mention_with_nlp(message, content)
+
         except Exception as e:
             logger.error(f"Error handling mention: {e}")
             try:
-                await message.channel.send("Sorry, I couldn't process your request due to an error.")
+                await message.channel.send("ごめん、エラーが発生しちゃった。もう一度試してみて！")
             except Exception as send_error:
                 logger.error(f"Failed to send error message: {send_error}")
+
+    async def _handle_mention_with_agent(self, message: discord.Message, content: str):
+        """Handle mention using the agent orchestrator"""
+        from rajitan.agent.orchestrator import AgentContext
+
+        context = AgentContext(
+            guild_id=str(message.guild.id),
+            channel_id=str(message.channel.id),
+            user_id=str(message.author.id),
+            username=message.author.display_name,
+            message=message,
+        )
+
+        async with message.channel.typing():
+            result = await self.agent_orchestrator.execute(content, context)
+
+        if result.response:
+            # Split long messages (Discord 2000 char limit)
+            response = result.response
+            while len(response) > 2000:
+                split_point = response[:2000].rfind("\n")
+                if split_point == -1:
+                    split_point = 2000
+                await message.channel.send(response[:split_point])
+                response = response[split_point:]
+            if response:
+                await message.channel.send(response)
+
+            # Track bot response
+            try:
+                await self.conversation_tracker.track_message(
+                    channel_id=str(message.channel.id),
+                    user_id=str(self.user.id) if self.user else "bot",
+                    username=self.user.display_name if self.user else "らじたん",
+                    content=result.response,
+                )
+            except Exception as e:
+                logger.warning(f"Could not track bot response: {e}")
+
+        logger.info(
+            f"Agent completed: steps={result.steps_taken}, "
+            f"tools={result.tools_used}, tokens={result.total_tokens}"
+        )
     
     async def process_mention_with_nlp(self, message: discord.Message, content: str):
         """Process mention with natural language processing"""

@@ -1,0 +1,15 @@
+[Unit]
+Description=Rajitan Discord Bot
+After=network.target
+
+[Service]
+Type=simple
+User=glareishiki
+WorkingDirectory=/home/glareishiki/Rajitan-Discord
+ExecStart=/home/glareishiki/Rajitan-Discord/venv/bin/python -m rajitan.main
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
