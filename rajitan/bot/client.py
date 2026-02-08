@@ -177,6 +177,12 @@ class RajitanBot(commands.Bot):
                     datetime.now()
                 )
 
+            # Memory-based routing: if agent has pending actions, route without mention
+            if hasattr(self, 'memory_manager') and self.memory_manager:
+                if await self.memory_manager.has_pending_action(str(message.channel.id)):
+                    await self._handle_mention_with_agent(message, message.content)
+                    return
+
             # Handle bot mentions
             if self.user is not None and self.user in message.mentions:
                 channel_name = getattr(message.channel, 'name', str(message.channel.id))

@@ -196,6 +196,9 @@ class RajitanApplication:
             from rajitan.agent.tools.conversation_tool import GetConversationTool, SearchConversationTool, GetUserMessagesTool, AnalyzeMoodTool
             from rajitan.agent.tools.character_tool import CharacterTool
             from rajitan.agent.tools.discord_tool import SendMessageTool, AddReactionTool
+            from rajitan.agent.tools.quiz_answer_tool import QuizAnswerTool
+            from rajitan.agent.tools.memory_tool import RememberTool, RecallTool
+            from rajitan.agent.memory.manager import MemoryManager
             from rajitan.agent.orchestrator import AgentOrchestrator
 
             # Agent uses DeepSeek if configured, otherwise falls back to OpenAI
@@ -211,6 +214,10 @@ class RajitanApplication:
                 llm_provider = OpenAIProvider(self.openai_client.client, self.openai_client.model)
                 logger.info("Agent LLM: OpenAI")
             tool_registry = ToolRegistry()
+
+            # Initialize memory system
+            memory_manager = MemoryManager(self.redis_client, self.db_client)
+            logger.info("Memory system initialized (3-tier)")
 
             # Register all tools at startup (never add/remove dynamically)
             tool_registry.register(SummaryTool(self.conversation_summarizer, self.conversation_tracker))
@@ -230,12 +237,16 @@ class RajitanApplication:
             tool_registry.register(CharacterTool(self.character_manager))
             tool_registry.register(SendMessageTool())
             tool_registry.register(AddReactionTool())
+            tool_registry.register(QuizAnswerTool(self.quiz_runner, memory_manager))
+            tool_registry.register(RememberTool(memory_manager))
+            tool_registry.register(RecallTool(memory_manager))
 
             agent_orchestrator = AgentOrchestrator(
                 llm_provider=llm_provider,
                 tool_registry=tool_registry,
                 character_manager=self.character_manager,
                 conversation_tracker=self.conversation_tracker,
+                memory_manager=memory_manager,
             )
             logger.info(f"Agent system initialized with {len(tool_registry)} tools")
 
@@ -253,6 +264,7 @@ class RajitanApplication:
                 music_recommender=self.music_recommender,
                 levemagi_client=self.levemagi_client,
                 agent_orchestrator=agent_orchestrator,
+                memory_manager=memory_manager,
             )
             
             # Setup commands

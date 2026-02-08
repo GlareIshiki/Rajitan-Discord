@@ -7,6 +7,8 @@ import discord
 
 from rajitan.agent.context_manager import ContextManager
 from rajitan.agent.llm.base import LLMProvider, LLMResponse
+from rajitan.agent.memory.prompt_integrator import MemoryPromptIntegrator
+from rajitan.agent.memory.writer import AgentMemoryWriter
 from rajitan.agent.prompts import AgentPromptBuilder
 from rajitan.agent.tools.base import ToolRegistry, ToolResult
 from rajitan.utils.logger import get_logger
@@ -46,13 +48,21 @@ class AgentOrchestrator:
         tool_registry: ToolRegistry,
         character_manager,
         conversation_tracker,
+        memory_manager=None,
     ):
         self.llm = llm_provider
         self.tools = tool_registry
         self.character_manager = character_manager
         self.conversation_tracker = conversation_tracker
-        self.prompt_builder = AgentPromptBuilder(character_manager, conversation_tracker)
+        self.memory_manager = memory_manager
         self.context_manager = ContextManager()
+
+        # Memory subsystem
+        memory_integrator = MemoryPromptIntegrator(memory_manager) if memory_manager else None
+        self.memory_writer = AgentMemoryWriter(memory_manager) if memory_manager else None
+        self.prompt_builder = AgentPromptBuilder(
+            character_manager, conversation_tracker, memory_integrator
+        )
 
     async def execute(self, user_message: str, context: AgentContext) -> AgentResult:
         """Execute the thinking agent loop"""
@@ -104,7 +114,7 @@ class AgentOrchestrator:
             )
 
             if llm_response is None:
-                return AgentResult(
+                result = AgentResult(
                     response="ごめん、うまく考えられなかった...もう一度試してみて！",
                     success=False,
                     steps_taken=step + 1,
@@ -112,6 +122,9 @@ class AgentOrchestrator:
                     total_tokens=total_tokens,
                     goal=user_message,
                 )
+                if self.memory_writer:
+                    await self.memory_writer.process_result(result, context)
+                return result
 
             total_tokens += llm_response.usage.get("total_tokens", 0)
 
@@ -122,7 +135,7 @@ class AgentOrchestrator:
                     f"Agent completed in {step + 1} steps, {elapsed:.1f}s, "
                     f"{total_tokens} tokens, tools: {tools_used}"
                 )
-                return AgentResult(
+                result = AgentResult(
                     response=llm_response.content,
                     success=True,
                     steps_taken=step + 1,
@@ -130,6 +143,9 @@ class AgentOrchestrator:
                     total_tokens=total_tokens,
                     goal=user_message,
                 )
+                if self.memory_writer:
+                    await self.memory_writer.process_result(result, context)
+                return result
 
             # Case 2: Tool calls
             if llm_response.has_tool_calls:
@@ -190,7 +206,7 @@ class AgentOrchestrator:
 
         # Max steps exceeded
         logger.warning(f"Agent exceeded {self.MAX_STEPS} steps")
-        return AgentResult(
+        result = AgentResult(
             response="ごめん、処理が複雑すぎてうまくいかなかった。もう少しシンプルに伝えてくれると助かる！",
             success=False,
             steps_taken=self.MAX_STEPS,
@@ -198,6 +214,9 @@ class AgentOrchestrator:
             total_tokens=total_tokens,
             goal=user_message,
         )
+        if self.memory_writer:
+            await self.memory_writer.process_result(result, context)
+        return result
 
     def _get_step_params(
         self,

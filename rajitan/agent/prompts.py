@@ -12,6 +12,7 @@ import discord
 from rajitan.utils.logger import get_logger
 
 if TYPE_CHECKING:
+    from rajitan.agent.memory.prompt_integrator import MemoryPromptIntegrator
     from rajitan.agent.orchestrator import AgentContext
 
 logger = get_logger("agent.prompts")
@@ -20,9 +21,10 @@ logger = get_logger("agent.prompts")
 class AgentPromptBuilder:
     """Builds structured system prompts for the thinking agent"""
 
-    def __init__(self, character_manager, conversation_tracker):
+    def __init__(self, character_manager, conversation_tracker, memory_integrator: "MemoryPromptIntegrator" = None):
         self.character_manager = character_manager
         self.conversation_tracker = conversation_tracker
+        self.memory_integrator = memory_integrator
 
     async def build_system_prompt(self, context: "AgentContext") -> str:
         """Build the complete system prompt with all sections"""
@@ -48,7 +50,16 @@ class AgentPromptBuilder:
         # Section 6: Response format rules
         parts.append(self._build_response_format_guide())
 
-        # Section 7: Recent conversation context (direct Discord API)
+        # Section 7: Memory usage guide
+        parts.append(self._build_memory_usage_guide())
+
+        # Section 8: Agent memory (3-tier)
+        if self.memory_integrator:
+            memory_section = await self.memory_integrator.build_memory_section(context)
+            if memory_section:
+                parts.append(memory_section)
+
+        # Section 9: Recent conversation context (direct Discord API)
         conversation_section = await self._build_conversation_context(
             context.message.channel
         )
@@ -116,6 +127,17 @@ class AgentPromptBuilder:
 - ツールの生データや内部情報をそのまま送らない。結果を自然な言葉でまとめる
 - 「〜を実行しました」「〜ツールを使用しました」のような機械的な報告はしない
 - ユーザーの言葉に自然に応答する形で結果を伝える"""
+
+    def _build_memory_usage_guide(self) -> str:
+        return """## 記憶の活用
+
+- 「現在の状態」にある待ちアクションを最優先で確認する
+- 待ちアクションがある場合、ユーザーのメッセージをその文脈で解釈する
+  - 例: クイズ回答待ちなら「A」「A、B、C」はクイズの回答 → quiz_answerツールを使う
+  - 例: 確認待ちなら「はい」「うん」は承認として処理する
+- 「今日のアクション履歴」を参照して、同じ操作の重複を避ける
+- 「知っていること」を活用して、ユーザーに合わせた応答をする
+- 重要な情報を学んだら、rememberツールで長期記憶に保存する"""
 
     async def _build_conversation_context(self, channel: discord.TextChannel) -> str:
         """Fetch last 15 messages directly from Discord API."""

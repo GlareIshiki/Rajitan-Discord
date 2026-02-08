@@ -301,6 +301,30 @@ class SQLiteClient:
                 )
             ''')
 
+            # Agent memories table (Tier 3: long-term memory)
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS agent_memories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id TEXT NOT NULL,
+                    channel_id TEXT,
+                    user_id TEXT,
+                    category TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(guild_id, COALESCE(channel_id, ''), COALESCE(user_id, ''), category, key)
+                )
+            ''')
+            await db.execute('''
+                CREATE INDEX IF NOT EXISTS idx_agent_memories_guild
+                ON agent_memories(guild_id)
+            ''')
+            await db.execute('''
+                CREATE INDEX IF NOT EXISTS idx_agent_memories_user
+                ON agent_memories(guild_id, user_id)
+            ''')
+
             await db.commit()
     
     # Guild operations
@@ -529,6 +553,84 @@ class SQLiteClient:
             logger.error(f"Failed to add usage stat: {e}")
             return False
     
+    # Agent memory operations (Tier 3)
+    async def upsert_agent_memory(
+        self, guild_id: str, category: str, key: str, value: str,
+        channel_id: str = None, user_id: str = None
+    ) -> bool:
+        """Insert or update an agent memory entry"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(
+                    '''INSERT INTO agent_memories
+                       (guild_id, channel_id, user_id, category, key, value, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                       ON CONFLICT(guild_id, COALESCE(channel_id, ''), COALESCE(user_id, ''), category, key)
+                       DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP''',
+                    (guild_id, channel_id, user_id, category, key, value)
+                )
+                await db.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to upsert agent memory: {e}")
+            return False
+
+    async def get_agent_memories(
+        self, guild_id: str, category: str = None, user_id: str = None,
+        channel_id: str = None, limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """Get agent memories with optional filters"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                query = "SELECT guild_id, channel_id, user_id, category, key, value, created_at, updated_at FROM agent_memories WHERE guild_id = ?"
+                params: list = [guild_id]
+
+                if category:
+                    query += " AND category = ?"
+                    params.append(category)
+                if user_id:
+                    query += " AND user_id = ?"
+                    params.append(user_id)
+                if channel_id:
+                    query += " AND channel_id = ?"
+                    params.append(channel_id)
+
+                query += " ORDER BY updated_at DESC LIMIT ?"
+                params.append(limit)
+
+                async with db.execute(query, params) as cursor:
+                    rows = await cursor.fetchall()
+                    return [
+                        {
+                            "guild_id": r[0],
+                            "channel_id": r[1],
+                            "user_id": r[2],
+                            "category": r[3],
+                            "key": r[4],
+                            "value": r[5],
+                            "created_at": r[6],
+                            "updated_at": r[7],
+                        }
+                        for r in rows
+                    ]
+        except Exception as e:
+            logger.error(f"Failed to get agent memories: {e}")
+            return []
+
+    async def delete_agent_memory(self, guild_id: str, category: str, key: str) -> bool:
+        """Delete an agent memory entry"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(
+                    "DELETE FROM agent_memories WHERE guild_id = ? AND category = ? AND key = ?",
+                    (guild_id, category, key)
+                )
+                await db.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to delete agent memory: {e}")
+            return False
+
     async def close(self):
         """Close database connection"""
         pass
