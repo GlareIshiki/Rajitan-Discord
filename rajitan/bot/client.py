@@ -51,6 +51,10 @@ class RajitanBot(commands.Bot):
         self.intent_router = None
         self.agent_orchestrator = None
         self.response_gate = None
+
+        # Conversation window: channel_id → last bot interaction time
+        self._conversation_windows: Dict[str, datetime] = {}
+        self.CONVERSATION_WINDOW_SECONDS = 120  # 2分
     
     def inject_dependencies(self, **dependencies):
         """Inject service dependencies"""
@@ -178,18 +182,39 @@ class RajitanBot(commands.Bot):
                     datetime.now()
                 )
 
+            channel_id = str(message.channel.id)
+
             # Memory-based routing: if agent has pending actions, route without mention
             if hasattr(self, 'memory_manager') and self.memory_manager:
-                if await self.memory_manager.has_pending_action(str(message.channel.id)):
+                if await self.memory_manager.has_pending_action(channel_id):
                     await self._handle_mention_with_agent(message, message.content)
+                    self._activate_conversation(channel_id)
                     return
 
             # Handle bot mentions
             if self.user is not None and self.user in message.mentions:
-                channel_name = getattr(message.channel, 'name', str(message.channel.id))
+                channel_name = getattr(message.channel, 'name', channel_id)
                 logger.info(f"Bot mentioned by {message.author.display_name} in channel {channel_name}")
                 await self.handle_mention(message)
-            
+                self._activate_conversation(channel_id)
+                return
+
+            # Conversation window: respond without mention if active
+            if self._is_conversation_active(channel_id):
+                if self.response_gate and self.agent_orchestrator:
+                    recent = await self._get_recent_context(message.channel)
+                    if await self.response_gate.should_participate(
+                        message.content, recent
+                    ):
+                        logger.info(f"Conversation window: participating in {channel_id}")
+                        await self._handle_mention_with_agent(message, message.content)
+                        self._activate_conversation(channel_id)
+                        return
+                    else:
+                        # LLM said NO → close window, require @mention again
+                        logger.info(f"Conversation window: closing for {channel_id}")
+                        self._deactivate_conversation(channel_id)
+
             # Process commands
             await self.process_commands(message)
             
@@ -283,6 +308,33 @@ class RajitanBot(commands.Bot):
             f"Agent completed: steps={result.steps_taken}, "
             f"tools={result.tools_used}, tokens={result.total_tokens}"
         )
+
+    # --- Conversation window helpers ---
+
+    def _is_conversation_active(self, channel_id: str) -> bool:
+        """2分以内にボットが応答したチャンネルか"""
+        last = self._conversation_windows.get(channel_id)
+        if not last:
+            return False
+        return (datetime.now() - last).total_seconds() < self.CONVERSATION_WINDOW_SECONDS
+
+    def _activate_conversation(self, channel_id: str):
+        """タイマー開始/リセット"""
+        self._conversation_windows[channel_id] = datetime.now()
+
+    def _deactivate_conversation(self, channel_id: str):
+        """ウィンドウ強制終了（@メンション必須に戻る）"""
+        self._conversation_windows.pop(channel_id, None)
+
+    async def _get_recent_context(self, channel) -> str:
+        """直近5件のメッセージをテキスト化（割り込み判定用）"""
+        msgs = []
+        async for msg in channel.history(limit=5):
+            name = msg.author.display_name
+            content = msg.content[:100] if msg.content else "(empty)"
+            msgs.append(f"{name}: {content}")
+        msgs.reverse()
+        return "\n".join(msgs)
 
     async def process_mention_with_nlp(self, message: discord.Message, content: str):
         """Process mention with natural language processing"""

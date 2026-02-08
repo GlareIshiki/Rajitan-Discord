@@ -1,8 +1,8 @@
 """
-ResponseGate — エージェント応答の品質ゲート。
+ResponseGate — エージェント応答の品質ゲート + 会話参加判定。
 
-送信前にエージェントと同じLLMで「ユーザーに送るべきか」をYES/NO判定。
-ステートレス。失敗時はフェイルセーフ（送信する）。
+- should_send: 応答を送信すべきか（フェイルセーフ: 送信する）
+- should_participate: 会話ウィンドウ内で割り込むべきか（フェイルセーフ: 割り込まない）
 """
 
 import asyncio
@@ -31,6 +31,20 @@ GATE_PROMPT = """あなたはDiscordボットの出力チェッカーです。
 {response}
 
 この応答はユーザーに送るべき内容ですか？YESかNOだけ答えてください。"""
+
+PARTICIPATE_PROMPT = """あなたはDiscordボット「らじたん」です。
+今、ユーザーと会話中です。新しいメッセージが来ました。
+
+最近の会話:
+{recent_messages}
+
+新しいメッセージ: {new_message}
+
+このメッセージに対して、あなたは会話に参加すべきですか？
+- YES: 自分に話しかけている、会話の流れで自然に返せる、盛り上げられる
+- NO: 自分に関係ない話、ユーザー同士の会話、煙たがられている、返す必要がない
+
+YESかNOだけ答えてください。"""
 
 
 class ResponseGate:
@@ -67,3 +81,35 @@ class ResponseGate:
             logger.info(f"ResponseGate blocked: {response[:80]}...")
             return False
         return True
+
+    # --- 会話参加判定 ---
+
+    async def should_participate(self, new_message: str, recent_messages: str) -> bool:
+        """会話ウィンドウ内で、この発言に割り込むべきか判定。失敗時はFalse（割り込まない）。"""
+        try:
+            return await asyncio.wait_for(
+                self._judge_participation(new_message, recent_messages),
+                timeout=3.0,
+            )
+        except Exception as e:
+            logger.warning(f"Participation check failed, defaulting to no: {e}")
+            return False
+
+    async def _judge_participation(self, new_message: str, recent_messages: str) -> bool:
+        prompt = PARTICIPATE_PROMPT.format(
+            recent_messages=recent_messages,
+            new_message=new_message,
+        )
+        result = await self.llm.chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=5,
+            temperature=0,
+        )
+        if result is None:
+            return False
+        answer = (result.content or "").strip().upper()
+        if "YES" in answer:
+            logger.info(f"Participation approved: {new_message[:60]}...")
+            return True
+        logger.info(f"Participation declined: {new_message[:60]}...")
+        return False
