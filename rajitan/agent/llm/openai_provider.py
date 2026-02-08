@@ -25,6 +25,7 @@ class OpenAIProvider(LLMProvider):
         tools: Optional[List[Dict[str, Any]]] = None,
         temperature: float = 0.7,
         max_tokens: int = 1000,
+        thinking: bool = True,
     ) -> Optional[LLMResponse]:
         kwargs: Dict[str, Any] = {
             "model": self.model,
@@ -37,8 +38,8 @@ class OpenAIProvider(LLMProvider):
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
 
-        # Enable DeepSeek thinking mode
-        if "deepseek" in self.model:
+        # Enable DeepSeek thinking mode (only when requested)
+        if thinking and "deepseek" in self.model:
             kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
 
         response = await self.client.chat.completions.create(**kwargs)

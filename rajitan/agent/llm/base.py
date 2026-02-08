@@ -38,6 +38,7 @@ class LLMProvider(ABC):
         tools: Optional[List[Dict[str, Any]]] = None,
         temperature: float = 0.7,
         max_tokens: int = 1000,
+        thinking: bool = True,
     ) -> LLMResponse:
         """Send chat completion request with optional tool definitions"""
         pass
