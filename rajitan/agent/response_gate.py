@@ -109,11 +109,15 @@ class ResponseGate:
             messages=[{"role": "user", "content": prompt}],
             max_tokens=10,
             temperature=0,
-            thinking=False,
+            thinking=True,
         )
         if result is None:
             return "skip"
+        # Thinking mode may put answer in reasoning_content with empty content
         answer = (result.content or "").strip().upper()
+        if not answer and result.reasoning_content:
+            answer = result.reasoning_content.strip().upper()
+            logger.debug(f"Participation: using reasoning_content as fallback")
         logger.debug(f"Participation raw answer: '{answer}' for: {new_message[:60]}")
         if "LEAVE" in answer:
             logger.info(f"Participation: LEAVE — {new_message[:60]}...")

@@ -79,4 +79,5 @@ class OpenAIProvider(LLMProvider):
             content=message.content,
             tool_calls=parsed_tool_calls,
             usage=usage,
+            reasoning_content=reasoning,
         )

@@ -17,6 +17,7 @@ class LLMResponse:
     content: Optional[str] = None
     tool_calls: Optional[List[ToolCall]] = None
     usage: Dict[str, int] = field(default_factory=dict)
+    reasoning_content: Optional[str] = None
 
     @property
     def has_tool_calls(self) -> bool:
