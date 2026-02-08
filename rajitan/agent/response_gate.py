@@ -116,8 +116,15 @@ class ResponseGate:
         # Thinking mode may put answer in reasoning_content with empty content
         answer = (result.content or "").strip().upper()
         if not answer and result.reasoning_content:
-            answer = result.reasoning_content.strip().upper()
-            logger.debug(f"Participation: using reasoning_content as fallback")
+            # Answer is at the end of reasoning — check last 50 chars
+            tail = result.reasoning_content.strip()[-50:].upper()
+            logger.debug(f"Participation: reasoning tail='{tail}'")
+            if "LEAVE" in tail:
+                answer = "LEAVE"
+            elif "YES" in tail:
+                answer = "YES"
+            elif "SKIP" in tail:
+                answer = "SKIP"
         logger.debug(f"Participation raw answer: '{answer}' for: {new_message[:60]}")
         if "LEAVE" in answer:
             logger.info(f"Participation: LEAVE — {new_message[:60]}...")
