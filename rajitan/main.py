@@ -193,7 +193,7 @@ class RajitanApplication:
             from rajitan.agent.tools.music_tool import MusicTool
             from rajitan.agent.tools.schedule_tool import ScheduleCreateTool, ScheduleListTool, ScheduleDeleteTool
             from rajitan.agent.tools.task_tool import TaskAddTool, TaskCompleteTool, TaskListTool, ProjectListTool
-            from rajitan.agent.tools.conversation_tool import GetConversationTool, AnalyzeMoodTool
+            from rajitan.agent.tools.conversation_tool import GetConversationTool, SearchConversationTool, GetUserMessagesTool, AnalyzeMoodTool
             from rajitan.agent.tools.character_tool import CharacterTool
             from rajitan.agent.tools.discord_tool import SendMessageTool, AddReactionTool
             from rajitan.agent.orchestrator import AgentOrchestrator
@@ -224,6 +224,8 @@ class RajitanApplication:
             tool_registry.register(TaskListTool(self.levemagi_client))
             tool_registry.register(ProjectListTool(self.levemagi_client))
             tool_registry.register(GetConversationTool(self.conversation_tracker))
+            tool_registry.register(SearchConversationTool())
+            tool_registry.register(GetUserMessagesTool())
             tool_registry.register(AnalyzeMoodTool(self.conversation_tracker, self.conversation_analyzer))
             tool_registry.register(CharacterTool(self.character_manager))
             tool_registry.register(SendMessageTool())

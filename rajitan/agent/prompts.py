@@ -7,6 +7,8 @@ verify results, recover from errors, and respond naturally in character.
 
 from typing import TYPE_CHECKING
 
+import discord
+
 from rajitan.utils.logger import get_logger
 
 if TYPE_CHECKING:
@@ -46,9 +48,9 @@ class AgentPromptBuilder:
         # Section 6: Response format rules
         parts.append(self._build_response_format_guide())
 
-        # Section 7: Recent conversation context
+        # Section 7: Recent conversation context (direct Discord API)
         conversation_section = await self._build_conversation_context(
-            context.channel_id
+            context.message.channel
         )
         if conversation_section:
             parts.append(conversation_section)
@@ -115,17 +117,25 @@ class AgentPromptBuilder:
 - 「〜を実行しました」「〜ツールを使用しました」のような機械的な報告はしない
 - ユーザーの言葉に自然に応答する形で結果を伝える"""
 
-    async def _build_conversation_context(self, channel_id: str) -> str:
-        """Fetch recent conversation for context"""
+    async def _build_conversation_context(self, channel: discord.TextChannel) -> str:
+        """Fetch last 15 messages directly from Discord API."""
         try:
-            recent_msgs = await self.conversation_tracker.get_recent_conversation(
-                channel_id, duration_minutes=30
-            )
-            if recent_msgs:
+            messages = []
+            async for msg in channel.history(limit=15):
+                messages.append(msg)
+            messages.reverse()  # oldest first
+
+            if messages:
                 convo_lines = []
-                for m in recent_msgs[-10:]:
-                    convo_lines.append(f"{m.username}: {m.content[:200]}")
-                return "## 最近の会話\n" + "\n".join(convo_lines)
+                for m in messages:
+                    if not m.author.bot:
+                        timestamp = m.created_at.strftime("%H:%M")
+                        content = m.content[:200] if m.content else "(添付/embed)"
+                        convo_lines.append(
+                            f"[{timestamp}] {m.author.display_name}: {content}"
+                        )
+                if convo_lines:
+                    return "## 最近の会話（直近15件）\n" + "\n".join(convo_lines)
         except Exception as e:
-            logger.warning(f"Failed to get recent conversation: {e}")
+            logger.warning(f"Failed to fetch Discord history: {e}")
         return ""
