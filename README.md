@@ -37,10 +37,14 @@ AIラジオDJ風のDiscordボット。会話の要約、クイズ、音楽レコ
 ### インストール
 
 ```bash
-git clone <repository>
+git clone https://github.com/GlareIshiki/Rajitan-Discord.git
 cd Rajitan-Discord
 python -m venv venv
-venv\Scripts\activate  # Windows
+# Windows
+venv\Scripts\activate
+# Linux / macOS
+source venv/bin/activate
+
 pip install -r requirements.txt
 ```
 

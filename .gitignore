@@ -1,5 +1,4 @@
-# .gitignore ファイルを作成
-echo "# 環境固有ファイル
+# 環境固有ファイル
 .env
 *.pid
 *.db
@@ -7,12 +6,16 @@ echo "# 環境固有ファイル
 # 仮想環境
 test_env/
 venv/
+.venv/
 __pycache__/
 *.pyc
+*.pyo
 
 # IDEファイル
 .vscode/
 .idea/
+*.swp
+*.swo
 
 # ログファイル
 logs/
@@ -20,4 +23,15 @@ logs/
 
 # OS固有
 .DS_Store
-Thumbs.db" > .gitignore
+Thumbs.db
+
+# ビルド・配布
+dist/
+build/
+*.egg-info/
+*.egg
+
+# テストカバレッジ
+htmlcov/
+.coverage
+.pytest_cache/
