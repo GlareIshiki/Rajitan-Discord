@@ -306,14 +306,14 @@ class SQLiteClient:
                 CREATE TABLE IF NOT EXISTS agent_memories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     guild_id TEXT NOT NULL,
-                    channel_id TEXT,
-                    user_id TEXT,
+                    channel_id TEXT NOT NULL DEFAULT '',
+                    user_id TEXT NOT NULL DEFAULT '',
                     category TEXT NOT NULL,
                     key TEXT NOT NULL,
                     value TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(guild_id, COALESCE(channel_id, ''), COALESCE(user_id, ''), category, key)
+                    UNIQUE(guild_id, channel_id, user_id, category, key)
                 )
             ''')
             await db.execute('''
@@ -560,12 +560,15 @@ class SQLiteClient:
     ) -> bool:
         """Insert or update an agent memory entry"""
         try:
+            # Convert None to empty string for UNIQUE constraint compatibility
+            channel_id = channel_id or ''
+            user_id = user_id or ''
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute(
                     '''INSERT INTO agent_memories
                        (guild_id, channel_id, user_id, category, key, value, updated_at)
                        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                       ON CONFLICT(guild_id, COALESCE(channel_id, ''), COALESCE(user_id, ''), category, key)
+                       ON CONFLICT(guild_id, channel_id, user_id, category, key)
                        DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP''',
                     (guild_id, channel_id, user_id, category, key, value)
                 )
