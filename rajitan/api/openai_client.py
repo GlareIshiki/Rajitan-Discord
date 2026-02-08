@@ -15,7 +15,7 @@ class OpenAIClient:
     
     def __init__(self):
         self.client = AsyncOpenAI(api_key=config.openai_api_key)
-        self.model = "gpt-4o-mini"  # 高性能で効率的なモデル
+        self.model = "gpt-4o-mini"
     
     @handle_async_errors(operation_name="generate character response", default_return=None)
     @with_retries(max_retries=2, delay=1.0)

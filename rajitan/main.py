@@ -198,7 +198,18 @@ class RajitanApplication:
             from rajitan.agent.tools.discord_tool import SendMessageTool, AddReactionTool
             from rajitan.agent.orchestrator import AgentOrchestrator
 
-            llm_provider = OpenAIProvider(self.openai_client.client, self.openai_client.model)
+            # Agent uses DeepSeek if configured, otherwise falls back to OpenAI
+            if config.deepseek_api_key:
+                from openai import AsyncOpenAI as _AsyncOpenAI
+                deepseek_client = _AsyncOpenAI(
+                    api_key=config.deepseek_api_key,
+                    base_url="https://api.deepseek.com",
+                )
+                llm_provider = OpenAIProvider(deepseek_client, "deepseek-chat")
+                logger.info("Agent LLM: DeepSeek v3")
+            else:
+                llm_provider = OpenAIProvider(self.openai_client.client, self.openai_client.model)
+                logger.info("Agent LLM: OpenAI")
             tool_registry = ToolRegistry()
 
             # Register all tools at startup (never add/remove dynamically)

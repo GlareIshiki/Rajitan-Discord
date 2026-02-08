@@ -19,6 +19,9 @@ class Config:
         
         # OpenAI Configuration
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
+
+        # DeepSeek Configuration
+        self.deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
         
         # YouTube Data API Configuration
         self.youtube_api_key = os.getenv("YOUTUBE_API_KEY")
