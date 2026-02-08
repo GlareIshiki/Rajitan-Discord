@@ -122,7 +122,185 @@ class SQLiteClient:
                     FOREIGN KEY (guild_id) REFERENCES guilds(id)
                 )
             ''')
-            
+
+            # LeveMagi tables
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS lm_users (
+                    discord_id TEXT PRIMARY KEY,
+                    total_xp REAL DEFAULT 0,
+                    gacha_tickets INTEGER DEFAULT 0,
+                    collected_items TEXT DEFAULT '[]',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS lm_portals (
+                    id TEXT PRIMARY KEY,
+                    discord_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    description TEXT DEFAULT '',
+                    tags TEXT DEFAULT '[]',
+                    rating REAL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (discord_id) REFERENCES lm_users(discord_id)
+                )
+            ''')
+
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS lm_nuts (
+                    id TEXT PRIMARY KEY,
+                    discord_id TEXT NOT NULL,
+                    portal_id TEXT,
+                    name TEXT NOT NULL,
+                    description TEXT DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'いつかやる',
+                    priority TEXT NOT NULL DEFAULT 'medium',
+                    difficulty INTEGER NOT NULL DEFAULT 1,
+                    tags TEXT DEFAULT '[]',
+                    start_date TEXT,
+                    deadline TEXT,
+                    icon TEXT,
+                    image_url TEXT,
+                    version TEXT,
+                    public_url TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (discord_id) REFERENCES lm_users(discord_id),
+                    FOREIGN KEY (portal_id) REFERENCES lm_portals(id)
+                )
+            ''')
+
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS lm_trunks (
+                    id TEXT PRIMARY KEY,
+                    discord_id TEXT NOT NULL,
+                    nuts_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    type TEXT NOT NULL DEFAULT 'non-issue',
+                    value INTEGER NOT NULL DEFAULT 1,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    what TEXT DEFAULT '',
+                    idea TEXT DEFAULT '',
+                    conclusion TEXT DEFAULT '',
+                    detail TEXT,
+                    comment TEXT,
+                    tags TEXT DEFAULT '[]',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (nuts_id) REFERENCES lm_nuts(id)
+                )
+            ''')
+
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS lm_leaves (
+                    id TEXT PRIMARY KEY,
+                    discord_id TEXT NOT NULL,
+                    nuts_id TEXT,
+                    trunk_id TEXT,
+                    title TEXT NOT NULL,
+                    priority TEXT NOT NULL DEFAULT 'medium',
+                    difficulty TEXT NOT NULL DEFAULT 'normal',
+                    started_at TEXT,
+                    completed_at TEXT,
+                    actual_hours REAL,
+                    bonus_hours REAL,
+                    xp_subtotal REAL,
+                    memo TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (nuts_id) REFERENCES lm_nuts(id),
+                    FOREIGN KEY (trunk_id) REFERENCES lm_trunks(id)
+                )
+            ''')
+
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS lm_roots (
+                    id TEXT PRIMARY KEY,
+                    discord_id TEXT NOT NULL,
+                    nuts_id TEXT,
+                    title TEXT NOT NULL,
+                    type TEXT NOT NULL DEFAULT 'seed',
+                    value REAL,
+                    difficulty INTEGER,
+                    tags TEXT DEFAULT '[]',
+                    what TEXT DEFAULT '',
+                    content TEXT DEFAULT '',
+                    comment TEXT,
+                    url TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (nuts_id) REFERENCES lm_nuts(id)
+                )
+            ''')
+
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS lm_worklogs (
+                    id TEXT PRIMARY KEY,
+                    discord_id TEXT NOT NULL,
+                    nuts_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    started_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    status_snapshot TEXT,
+                    phase_snapshot TEXT,
+                    level_snapshot INTEGER,
+                    deadline_snapshot TEXT,
+                    note TEXT,
+                    FOREIGN KEY (nuts_id) REFERENCES lm_nuts(id)
+                )
+            ''')
+
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS lm_resources (
+                    id TEXT PRIMARY KEY,
+                    discord_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    tags TEXT DEFAULT '[]',
+                    description TEXT,
+                    url TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS lm_tags (
+                    id TEXT PRIMARY KEY,
+                    discord_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    is_favorite BOOLEAN DEFAULT FALSE,
+                    UNIQUE(discord_id, name)
+                )
+            ''')
+
+            # Calendar events table
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS lm_calendar_events (
+                    id TEXT PRIMARY KEY,
+                    discord_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    start_time TIMESTAMP NOT NULL,
+                    end_time TIMESTAMP,
+                    event_type TEXT NOT NULL DEFAULT 'manual',
+                    source_id TEXT,
+                    color TEXT,
+                    is_all_day BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # Bot activities table
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS bot_activities (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id TEXT NOT NULL,
+                    channel_id TEXT NOT NULL,
+                    activity_type TEXT NOT NULL,
+                    description TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
             await db.commit()
     
     # Guild operations
