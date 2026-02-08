@@ -37,8 +37,17 @@ class OpenAIProvider(LLMProvider):
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
 
+        # Enable DeepSeek thinking mode
+        if "deepseek" in self.model:
+            kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
+
         response = await self.client.chat.completions.create(**kwargs)
         message = response.choices[0].message
+
+        # Log thinking content if present (never send to user)
+        reasoning = getattr(message, "reasoning_content", None)
+        if reasoning:
+            logger.debug(f"DeepSeek thinking: {reasoning[:200]}...")
 
         # Parse tool calls if present
         parsed_tool_calls = None
