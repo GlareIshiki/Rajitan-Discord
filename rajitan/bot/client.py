@@ -211,9 +211,9 @@ class RajitanBot(commands.Bot):
                         self._activate_conversation(channel_id)
                         return
                     else:
-                        # LLM said NO → close window, require @mention again
-                        logger.info(f"Conversation window: closing for {channel_id}")
-                        self._deactivate_conversation(channel_id)
+                        # LLM said NO → just skip, don't close window
+                        # Window expires naturally after 2 minutes
+                        logger.info(f"Conversation window: skipping message in {channel_id}")
 
             # Process commands
             await self.process_commands(message)
