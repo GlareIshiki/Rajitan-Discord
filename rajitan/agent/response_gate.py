@@ -107,9 +107,9 @@ class ResponseGate:
         )
         result = await self.llm.chat_completion(
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=5,
+            max_tokens=10,
             temperature=0,
-            thinking=True,
+            thinking=False,
         )
         if result is None:
             return "skip"
