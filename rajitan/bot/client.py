@@ -1,8 +1,9 @@
 import asyncio
 import discord
 from discord.ext import commands
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
+from rajitan.storage.models import Message
 from rajitan.utils.logger import get_logger
 from rajitan.utils.config import get_config
 from rajitan.utils.validators import validate_guild_id, validate_channel_id
@@ -39,8 +40,10 @@ class RajitanBot(commands.Bot):
         self.conversation_summarizer = None
         self.quiz_generator = None
         self.quiz_runner = None
-        self.scheduler_manager = None
         self.enhanced_schedule_manager = None
+        self.trigger_manager = None
+        self.music_recommender = None
+        self.levemagi_client = None
         
         # Bot state
         self.start_time = None
@@ -69,6 +72,19 @@ class RajitanBot(commands.Bot):
             )
             await self.change_presence(activity=activity)
             
+            # Ensure default character exists for all guilds
+            if self.character_manager:
+                for guild in self.guilds:
+                    try:
+                        character = await self.character_manager.get_character(str(guild.id))
+                        if not character:
+                            await self.character_manager.create_character(
+                                guild_id=str(guild.id), name="らじたん"
+                            )
+                            logger.info(f"Created default character for guild: {guild.name}")
+                    except Exception as e:
+                        logger.error(f"Failed to create default character for {guild.name}: {e}")
+
             # Sync slash commands if in debug mode
             if config.debug:
                 try:
@@ -140,7 +156,23 @@ class RajitanBot(commands.Bot):
                 username=message.author.display_name,
                 content=message.content
             )
-            
+
+            # Update trigger manager state
+            if self.trigger_manager:
+                from datetime import datetime
+                # Get current activity level
+                recent_messages = await self.conversation_tracker.get_recent_conversation(
+                    str(message.channel.id), duration_minutes=30
+                )
+                activity = await self.conversation_tracker.conversation_analyzer.analyze_conversation_activity(
+                    recent_messages
+                )
+                self.trigger_manager.update_channel_state(
+                    str(message.channel.id),
+                    activity.get("activity_level", "inactive"),
+                    datetime.now()
+                )
+
             # Handle bot mentions
             if self.user is not None and self.user in message.mentions:
                 channel_name = getattr(message.channel, 'name', str(message.channel.id))
@@ -193,44 +225,45 @@ class RajitanBot(commands.Bot):
     async def process_mention_with_nlp(self, message: discord.Message, content: str):
         """Process mention with natural language processing"""
         try:
-            guild_id = str(message.guild.id)
-            channel_id = str(message.channel.id)
-            
-            # Get recent conversation for context
-            recent_messages = []
-            try:
-                recent_messages = await self.conversation_tracker.get_recent_conversation(
-                    channel_id, duration_minutes=30
-                )
-            except Exception as e:
-                logger.warning(f"Could not get recent conversation: {e}")
-            
-            # Track this mention as a message
-            try:
-                await self.conversation_tracker.track_message(
-                    channel_id=channel_id,
-                    user_id=str(message.author.id),
-                    username=message.author.display_name,
-                    content=content
-                )
-            except Exception as e:
-                logger.warning(f"Could not track message: {e}")
-            
-            # Classify user intent
-            intent_classifier = IntentClassifier()
-            classification_result = await intent_classifier.classify_intent(content)
-            
-            intent = classification_result.get("intent")
-            confidence = classification_result.get("confidence", 0.0)
-            
-            logger.info(f"Classified intent: {intent} (confidence: {confidence})")
-            
-            # Use intent router for clean handling
-            if not self.intent_router:
-                self.intent_router = IntentRouter(self)
-            
-            await self.intent_router.route(message, content, classification_result)
-            
+            async with message.channel.typing():
+                guild_id = str(message.guild.id)
+                channel_id = str(message.channel.id)
+
+                # Get recent conversation for context
+                recent_messages = []
+                try:
+                    recent_messages = await self.conversation_tracker.get_recent_conversation(
+                        channel_id, duration_minutes=30
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not get recent conversation: {e}")
+
+                # Track this mention as a message
+                try:
+                    await self.conversation_tracker.track_message(
+                        channel_id=channel_id,
+                        user_id=str(message.author.id),
+                        username=message.author.display_name,
+                        content=content
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not track message: {e}")
+
+                # Classify user intent
+                intent_classifier = IntentClassifier()
+                classification_result = await intent_classifier.classify_intent(content)
+
+                intent = classification_result.get("intent")
+                confidence = classification_result.get("confidence", 0.0)
+
+                logger.info(f"Classified intent: {intent} (confidence: {confidence})")
+
+                # Use intent router for clean handling
+                if not self.intent_router:
+                    self.intent_router = IntentRouter(self)
+
+                await self.intent_router.route(message, content, classification_result)
+
         except Exception as e:
             logger.error(f"Error in NLP processing: {e}")
             # Fallback to simple response
@@ -396,13 +429,39 @@ class RajitanBot(commands.Bot):
     
     def get_bot_stats(self) -> Dict[str, Any]:
         """Get bot statistics"""
+        all_members = set(self.get_all_members())
         return {
             "guilds": len(self.guilds),
-            "users": len(set(self.get_all_members())),
+            "users": len(all_members),
+            "humans": len([m for m in all_members if not m.bot]),
+            "bots": len([m for m in all_members if m.bot]),
             "channels": len([c for c in self.get_all_channels() if isinstance(c, discord.TextChannel)]),
             "uptime": (datetime.now() - self.start_time).total_seconds() if self.start_time else 0,
             "ready": self.ready,
             "latency": round(self.latency * 1000, 2)  # ms
+        }
+
+    def get_user_breakdown(self) -> Dict[str, Any]:
+        """Get user breakdown by guild (humans vs bots)"""
+        all_members = set(self.get_all_members())
+        per_guild = []
+        for guild in self.guilds:
+            members = guild.members
+            humans = len([m for m in members if not m.bot])
+            bots = len([m for m in members if m.bot])
+            per_guild.append({
+                "id": str(guild.id),
+                "name": guild.name,
+                "humans": humans,
+                "bots": bots,
+                "total": humans + bots,
+            })
+        per_guild.sort(key=lambda g: g["total"], reverse=True)
+        return {
+            "total": len(all_members),
+            "humans": len([m for m in all_members if not m.bot]),
+            "bots": len([m for m in all_members if m.bot]),
+            "per_guild": per_guild,
         }
     
     async def shutdown(self):
@@ -431,6 +490,29 @@ class RajitanBot(commands.Bot):
             return False
         return user.guild_permissions.administrator
     
+    async def fetch_discord_history_as_messages(
+        self,
+        channel: discord.TextChannel,
+        limit: int = 50
+    ) -> List[Message]:
+        """Fetch Discord channel history and convert to Message objects"""
+        messages = []
+        try:
+            async for msg in channel.history(limit=limit, oldest_first=True):
+                if msg.author.bot:
+                    continue
+                if not msg.content:
+                    continue
+                messages.append(Message(
+                    user_id=str(msg.author.id),
+                    username=msg.author.display_name,
+                    content=msg.content,
+                    timestamp=msg.created_at.replace(tzinfo=None)
+                ))
+        except Exception as e:
+            logger.error(f"Failed to fetch Discord history: {e}")
+        return messages
+
     async def has_manage_permissions(self, user: discord.Member) -> bool:
         """Check if user has manage permissions"""
         if user is None or not hasattr(user, 'guild_permissions'):
