@@ -73,6 +73,10 @@ class AgentOrchestrator:
         last_failed_tool: Optional[str] = None
         tool_call_history: List[str] = []
 
+        # Determine thinking mode based on message complexity
+        use_thinking = self._looks_complex(user_message)
+        logger.info(f"Agent mode: {'thinking' if use_thinking else 'non-thinking'} for: {user_message[:40]}")
+
         # Reset per-execution tool call counts
         self.tools.reset_call_counts()
 
@@ -128,6 +132,7 @@ class AgentOrchestrator:
                 tools=step_tools,
                 temperature=0.7,
                 max_tokens=step_max_tokens,
+                thinking=use_thinking,
             )
 
             if llm_response is None:
@@ -278,15 +283,26 @@ class AgentOrchestrator:
             # Normal step: full thinking room
             return 1500, tool_definitions if tool_definitions else None
 
+    _LIGHT_PATTERNS = [
+        # 挨拶
+        "こんにちは", "おはよう", "おやすみ", "こんばんは",
+        "やっほ", "やあ", "よお", "ちーす", "ちーっす", "おっす",
+        "ただいま", "おかえり", "ひさしぶり",
+        # 感謝・了解
+        "ありがとう", "サンキュー", "了解", "おけ", "おっけ",
+        # 軽いノリ・雑談
+        "ひま", "暇", "元気", "調子", "なにしてる",
+        "面白い", "うける", "わろた", "草",
+        "好き", "かわいい", "すごい",
+    ]
+
     def _looks_complex(self, user_message: str) -> bool:
         """Heuristic: does this request likely need multi-step tool use?"""
         if len(user_message) < 10:
             return False
-        simple_patterns = [
-            "こんにちは", "おはよう", "おやすみ", "ありがとう", "ただいま",
-            "元気?", "元気？", "ひま", "暇", "やあ", "よお",
-        ]
-        return not any(p in user_message for p in simple_patterns)
+        if any(p in user_message for p in self._LIGHT_PATTERNS):
+            return False
+        return True
 
     def _build_tool_result_content(
         self,
