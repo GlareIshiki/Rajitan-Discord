@@ -33,16 +33,16 @@ GATE_PROMPT = """あなたはDiscordボットの出力チェッカーです。
 この応答はユーザーに送るべき内容ですか？YESかNOだけ答えてください。"""
 
 PARTICIPATE_PROMPT = """あなたはDiscordボット「らじたん」です。
-今、ユーザーと会話中です。新しいメッセージが来ました。
+今、ユーザーと会話中で、直近にあなたも会話に参加していました。
 
 最近の会話:
 {recent_messages}
 
 新しいメッセージ: {new_message}
 
-このメッセージに対して、あなたは会話に参加すべきですか？
-- YES: 自分に話しかけている、会話の流れで自然に返せる、盛り上げられる
-- NO: 自分に関係ない話、ユーザー同士の会話、煙たがられている、返す必要がない
+あなたはこのメッセージに反応すべきですか？
+あなたは会話の参加者なので、基本的にはYESです。
+NOにするのは: 明らかに自分に関係ない話、ユーザー同士の会話、「もういいよ」等で煙たがられている場合のみ。
 
 YESかNOだけ答えてください。"""
 
@@ -58,7 +58,7 @@ class ResponseGate:
         try:
             return await asyncio.wait_for(
                 self._judge(response, user_message),
-                timeout=3.0,
+                timeout=10.0,
             )
         except Exception as e:
             logger.warning(f"ResponseGate failed, defaulting to send: {e}")
@@ -89,7 +89,7 @@ class ResponseGate:
         try:
             return await asyncio.wait_for(
                 self._judge_participation(new_message, recent_messages),
-                timeout=3.0,
+                timeout=10.0,
             )
         except Exception as e:
             logger.warning(f"Participation check failed, defaulting to no: {e}")
