@@ -203,16 +203,19 @@ class RajitanBot(commands.Bot):
             if self._is_conversation_active(channel_id):
                 if self.response_gate and self.agent_orchestrator:
                     recent = await self._get_recent_context(message.channel)
-                    if await self.response_gate.should_participate(
+                    decision = await self.response_gate.should_participate(
                         message.content, recent
-                    ):
+                    )
+                    if decision == "yes":
                         logger.info(f"Conversation window: participating in {channel_id}")
                         await self._handle_mention_with_agent(message, message.content)
                         self._activate_conversation(channel_id)
                         return
+                    elif decision == "leave":
+                        logger.info(f"Conversation window: LEAVE — closing window for {channel_id}")
+                        self._deactivate_conversation(channel_id)
                     else:
-                        # LLM said NO → just skip, don't close window
-                        # Window expires naturally after 2 minutes
+                        # "skip" — don't respond but keep window open
                         logger.info(f"Conversation window: skipping message in {channel_id}")
 
             # Process commands

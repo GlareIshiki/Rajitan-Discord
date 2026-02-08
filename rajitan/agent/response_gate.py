@@ -40,11 +40,12 @@ PARTICIPATE_PROMPT = """あなたはDiscordボット「らじたん」です。
 
 新しいメッセージ: {new_message}
 
-あなたはこのメッセージに反応すべきですか？
-あなたは会話の参加者なので、基本的にはYESです。
-NOにするのは: 明らかに自分に関係ない話、ユーザー同士の会話、「もういいよ」等で煙たがられている場合のみ。
+以下の3つから選んでください:
+- YES: 自分に話しかけている、会話の流れで自然に返せる（基本はこれ）
+- SKIP: 今は自分の出番じゃない、他の人への発言、自分に関係ない話題
+- LEAVE: 煙たがられている、「もういいよ」等で明確に拒否されている
 
-YESかNOだけ答えてください。"""
+YES、SKIP、LEAVEのどれか1つだけ答えてください。"""
 
 
 class ResponseGate:
@@ -85,18 +86,18 @@ class ResponseGate:
 
     # --- 会話参加判定 ---
 
-    async def should_participate(self, new_message: str, recent_messages: str) -> bool:
-        """会話ウィンドウ内で、この発言に割り込むべきか判定。失敗時はFalse（割り込まない）。"""
+    async def should_participate(self, new_message: str, recent_messages: str) -> str:
+        """会話ウィンドウ内での参加判定。"yes"/"skip"/"leave" を返す。失敗時は"skip"。"""
         try:
             return await asyncio.wait_for(
                 self._judge_participation(new_message, recent_messages),
                 timeout=10.0,
             )
         except Exception as e:
-            logger.warning(f"Participation check failed, defaulting to no: {e}")
-            return False
+            logger.warning(f"Participation check failed, defaulting to skip: {e}")
+            return "skip"
 
-    async def _judge_participation(self, new_message: str, recent_messages: str) -> bool:
+    async def _judge_participation(self, new_message: str, recent_messages: str) -> str:
         prompt = PARTICIPATE_PROMPT.format(
             recent_messages=recent_messages,
             new_message=new_message,
@@ -108,10 +109,13 @@ class ResponseGate:
             thinking=True,
         )
         if result is None:
-            return False
+            return "skip"
         answer = (result.content or "").strip().upper()
+        if "LEAVE" in answer:
+            logger.info(f"Participation: LEAVE — {new_message[:60]}...")
+            return "leave"
         if "YES" in answer:
-            logger.info(f"Participation approved: {new_message[:60]}...")
-            return True
-        logger.info(f"Participation declined: {new_message[:60]}...")
-        return False
+            logger.info(f"Participation: YES — {new_message[:60]}...")
+            return "yes"
+        logger.info(f"Participation: SKIP — {new_message[:60]}...")
+        return "skip"
