@@ -114,11 +114,12 @@ class ResponseGate:
         if result is None:
             return "skip"
         answer = (result.content or "").strip().upper()
+        logger.debug(f"Participation raw answer: '{answer}' for: {new_message[:60]}")
         if "LEAVE" in answer:
             logger.info(f"Participation: LEAVE — {new_message[:60]}...")
             return "leave"
         if "YES" in answer:
             logger.info(f"Participation: YES — {new_message[:60]}...")
             return "yes"
-        logger.info(f"Participation: SKIP — {new_message[:60]}...")
+        logger.info(f"Participation: SKIP (raw='{answer}') — {new_message[:60]}...")
         return "skip"

@@ -333,7 +333,10 @@ class RajitanBot(commands.Bot):
         """直近5件のメッセージをテキスト化（割り込み判定用）"""
         msgs = []
         async for msg in channel.history(limit=5):
-            name = msg.author.display_name
+            if msg.author == self.user:
+                name = "あなた（らじたん）"
+            else:
+                name = msg.author.display_name
             content = msg.content[:100] if msg.content else "(empty)"
             msgs.append(f"{name}: {content}")
         msgs.reverse()
