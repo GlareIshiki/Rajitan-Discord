@@ -105,32 +105,46 @@ class ResponseGate:
             recent_messages=recent_messages,
             new_message=new_message,
         )
+        # Stage 1: Thinking mode — deep reasoning
         result = await self.llm.chat_completion(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=10,
             temperature=0,
             thinking=True,
         )
-        if result is None:
+
+        # If content came back directly, use it
+        if result and (result.content or "").strip():
+            answer = result.content.strip().upper()
+            return self._parse_participation(answer, new_message)
+
+        # Stage 2: Feed reasoning to non-thinking for clean extraction
+        reasoning = (result.reasoning_content or "") if result else ""
+        if not reasoning:
+            logger.warning(f"Participation: no reasoning, defaulting to skip")
             return "skip"
-        # Thinking mode may put answer in reasoning_content with empty content
-        answer = (result.content or "").strip().upper()
-        if not answer and result.reasoning_content:
-            # Answer is at the end of reasoning — check last 50 chars
-            tail = result.reasoning_content.strip()[-50:].upper()
-            logger.debug(f"Participation: reasoning tail='{tail}'")
-            if "LEAVE" in tail:
-                answer = "LEAVE"
-            elif "YES" in tail:
-                answer = "YES"
-            elif "SKIP" in tail:
-                answer = "SKIP"
-        logger.debug(f"Participation raw answer: '{answer}' for: {new_message[:60]}")
+
+        extract = await self.llm.chat_completion(
+            messages=[{
+                "role": "user",
+                "content": f"以下の分析に基づいて、YES、SKIP、LEAVEのどれか1つだけ答えてください。\n\n{reasoning}",
+            }],
+            max_tokens=5,
+            temperature=0,
+            thinking=False,
+        )
+        if extract is None:
+            return "skip"
+        answer = (extract.content or "").strip().upper()
+        logger.debug(f"Participation stage2 answer: '{answer}'")
+        return self._parse_participation(answer, new_message)
+
+    def _parse_participation(self, answer: str, new_message: str) -> str:
         if "LEAVE" in answer:
             logger.info(f"Participation: LEAVE — {new_message[:60]}...")
             return "leave"
         if "YES" in answer:
             logger.info(f"Participation: YES — {new_message[:60]}...")
             return "yes"
-        logger.info(f"Participation: SKIP (raw='{answer}') — {new_message[:60]}...")
+        logger.info(f"Participation: SKIP (raw='{answer[:30]}') — {new_message[:60]}...")
         return "skip"
