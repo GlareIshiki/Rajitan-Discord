@@ -14,6 +14,7 @@ class QuizTool(Tool):
 
     name = "quiz"
     description = "最近の会話内容からクイズを生成して出題する。会話の内容を楽しくおさらいできる。"
+    max_calls_per_execution = 1
     parameters = {
         "type": "object",
         "properties": {

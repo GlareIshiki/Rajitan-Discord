@@ -241,6 +241,10 @@ class RajitanApplication:
             tool_registry.register(RememberTool(memory_manager))
             tool_registry.register(RecallTool(memory_manager))
 
+            # Response quality gate (LLM-based YES/NO check before sending)
+            from rajitan.agent.response_gate import ResponseGate
+            response_gate = ResponseGate(llm_provider)
+
             agent_orchestrator = AgentOrchestrator(
                 llm_provider=llm_provider,
                 tool_registry=tool_registry,
@@ -265,6 +269,7 @@ class RajitanApplication:
                 levemagi_client=self.levemagi_client,
                 agent_orchestrator=agent_orchestrator,
                 memory_manager=memory_manager,
+                response_gate=response_gate,
             )
             
             # Setup commands

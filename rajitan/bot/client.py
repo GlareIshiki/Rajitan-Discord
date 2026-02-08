@@ -50,6 +50,7 @@ class RajitanBot(commands.Bot):
         self.ready = False
         self.intent_router = None
         self.agent_orchestrator = None
+        self.response_gate = None
     
     def inject_dependencies(self, **dependencies):
         """Inject service dependencies"""
@@ -250,8 +251,14 @@ class RajitanBot(commands.Bot):
             result = await self.agent_orchestrator.execute(content, context)
 
         if result.response:
-            # Split long messages (Discord 2000 char limit)
             response = result.response
+            # LLM品質ゲート: 送信すべきか判定
+            if self.response_gate:
+                if not await self.response_gate.should_send(response, content):
+                    logger.info("Response blocked by quality gate")
+                    return
+
+            # Split long messages (Discord 2000 char limit)
             while len(response) > 2000:
                 split_point = response[:2000].rfind("\n")
                 if split_point == -1:
@@ -276,7 +283,7 @@ class RajitanBot(commands.Bot):
             f"Agent completed: steps={result.steps_taken}, "
             f"tools={result.tools_used}, tokens={result.total_tokens}"
         )
-    
+
     async def process_mention_with_nlp(self, message: discord.Message, content: str):
         """Process mention with natural language processing"""
         try:
