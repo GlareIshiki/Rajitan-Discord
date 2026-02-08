@@ -9,7 +9,7 @@ logger = get_logger("agent.tools.web_search")
 
 class WebSearchTool(Tool):
     name = "web_search"
-    description = "Google検索でWebを検索する。最新情報、ニュース、知識の確認に使う。"
+    description = "Brave Searchでウェブを検索する。最新情報、ニュース、知識の確認に使う。"
     max_calls_per_execution = 2
     parameters = {
         "type": "object",
@@ -24,12 +24,11 @@ class WebSearchTool(Tool):
 
     def __init__(self):
         config = get_config()
-        self.api_key = config.google_search_api_key
-        self.cx = config.google_search_cx
+        self.api_key = config.brave_search_api_key
 
     async def execute(self, *, query: str = "", **kwargs) -> ToolResult:
-        if not self.api_key or not self.cx:
-            return ToolResult(success=False, error="Google Search APIが設定されていない")
+        if not self.api_key:
+            return ToolResult(success=False, error="Brave Search APIキーが設定されていない")
 
         if not query:
             return ToolResult(success=False, error="検索クエリが空です")
@@ -37,23 +36,23 @@ class WebSearchTool(Tool):
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(
-                    "https://www.googleapis.com/customsearch/v1",
+                    "https://api.search.brave.com/res/v1/web/search",
+                    headers={"X-Subscription-Token": self.api_key},
                     params={
-                        "key": self.api_key,
-                        "cx": self.cx,
                         "q": query,
-                        "num": 5,
+                        "count": 5,
+                        "search_lang": "ja",
                     },
                 )
                 response.raise_for_status()
-                items = response.json().get("items", [])
+                web_results = response.json().get("web", {}).get("results", [])
 
             results = []
-            for item in items[:5]:
+            for item in web_results[:5]:
                 results.append({
                     "title": item.get("title", ""),
-                    "url": item.get("link", ""),
-                    "snippet": item.get("snippet", ""),
+                    "url": item.get("url", ""),
+                    "snippet": item.get("description", ""),
                 })
 
             if not results:
@@ -62,7 +61,7 @@ class WebSearchTool(Tool):
             return ToolResult(success=True, data=results)
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"Google Search API error: {e.response.status_code}")
+            logger.error(f"Brave Search API error: {e.response.status_code}")
             return ToolResult(success=False, error=f"検索APIエラー: {e.response.status_code}")
         except Exception as e:
             logger.error(f"Web search failed: {e}")
