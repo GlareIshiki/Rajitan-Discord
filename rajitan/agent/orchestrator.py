@@ -5,7 +5,9 @@ from typing import Any, Dict, List, Optional
 
 import discord
 
+from rajitan.agent.context_manager import ContextManager
 from rajitan.agent.llm.base import LLMProvider, LLMResponse
+from rajitan.agent.prompts import AgentPromptBuilder
 from rajitan.agent.tools.base import ToolRegistry, ToolResult
 from rajitan.utils.logger import get_logger
 
@@ -30,10 +32,11 @@ class AgentResult:
     steps_taken: int = 0
     tools_used: List[str] = field(default_factory=list)
     total_tokens: int = 0
+    goal: Optional[str] = None
 
 
 class AgentOrchestrator:
-    """Main agent loop — plans, executes tools, verifies, and loops"""
+    """Thinking agent loop — understands, plans, executes, verifies, and responds"""
 
     MAX_STEPS = 15
 
@@ -48,35 +51,56 @@ class AgentOrchestrator:
         self.tools = tool_registry
         self.character_manager = character_manager
         self.conversation_tracker = conversation_tracker
+        self.prompt_builder = AgentPromptBuilder(character_manager, conversation_tracker)
+        self.context_manager = ContextManager()
 
     async def execute(self, user_message: str, context: AgentContext) -> AgentResult:
-        """Execute the agent loop"""
+        """Execute the thinking agent loop"""
         start_time = time.time()
         tools_used: List[str] = []
         total_tokens = 0
+        consecutive_errors = 0
+        last_failed_tool: Optional[str] = None
 
-        # 1. Build system prompt (immutable prefix)
-        system_prompt = await self._build_system_prompt(context)
+        # 1. Build system prompt (structured thinking protocol)
+        system_prompt = await self.prompt_builder.build_system_prompt(context)
 
-        # 2. Build initial messages (append-only)
+        # 2. Build initial messages with explicit user goal
         messages: List[Dict[str, Any]] = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ]
 
-        # 3. Get tool definitions (loaded once at start, never modified)
+        # 3. Get tool definitions (loaded once, never modified)
         tool_definitions = self.tools.get_function_definitions()
 
         # 4. Agent loop
         for step in range(self.MAX_STEPS):
             logger.info(f"Agent step {step + 1}/{self.MAX_STEPS}")
 
+            # Context window management: compact if approaching limits
+            if self.context_manager.should_summarize(messages):
+                logger.info("Context approaching limit, compacting...")
+                messages = self.context_manager.compact_context(messages)
+
+            # Goal reminder: every 4 steps, remind LLM of original request
+            if step > 0 and step % 4 == 0:
+                messages.append({
+                    "role": "user",
+                    "content": self.prompt_builder.build_goal_reminder(user_message),
+                })
+
+            # Adaptive max_tokens and tool availability
+            step_max_tokens, step_tools = self._get_step_params(
+                step, tool_definitions, messages
+            )
+
             # Call LLM
             llm_response = await self.llm.chat_completion(
                 messages=messages,
-                tools=tool_definitions if tool_definitions else None,
+                tools=step_tools,
                 temperature=0.7,
-                max_tokens=1000,
+                max_tokens=step_max_tokens,
             )
 
             if llm_response is None:
@@ -86,6 +110,7 @@ class AgentOrchestrator:
                     steps_taken=step + 1,
                     tools_used=tools_used,
                     total_tokens=total_tokens,
+                    goal=user_message,
                 )
 
             total_tokens += llm_response.usage.get("total_tokens", 0)
@@ -103,19 +128,25 @@ class AgentOrchestrator:
                     steps_taken=step + 1,
                     tools_used=tools_used,
                     total_tokens=total_tokens,
+                    goal=user_message,
                 )
 
             # Case 2: Tool calls
             if llm_response.has_tool_calls:
                 # Append assistant message with tool calls to context
-                assistant_msg: Dict[str, Any] = {"role": "assistant", "content": llm_response.content}
+                assistant_msg: Dict[str, Any] = {
+                    "role": "assistant",
+                    "content": llm_response.content,
+                }
                 assistant_msg["tool_calls"] = [
                     {
                         "id": tc.id,
                         "type": "function",
                         "function": {
                             "name": tc.name,
-                            "arguments": json.dumps(tc.arguments, ensure_ascii=False),
+                            "arguments": json.dumps(
+                                tc.arguments, ensure_ascii=False
+                            ),
                         },
                     }
                     for tc in llm_response.tool_calls
@@ -124,31 +155,38 @@ class AgentOrchestrator:
 
                 # Execute each tool call and append results
                 for tc in llm_response.tool_calls:
-                    logger.info(f"Executing tool: {tc.name} with args: {tc.arguments}")
+                    logger.info(
+                        f"Executing tool: {tc.name} with args: {tc.arguments}"
+                    )
                     tools_used.append(tc.name)
 
                     # Inject agent_context into tool args
                     tool_args = {**tc.arguments, "agent_context": context}
                     result = await self.tools.execute(tc.name, **tool_args)
 
-                    # Append tool result to context (append-only, errors preserved)
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tc.id,
-                            "content": result.to_content_string(),
-                        }
+                    # Build tool result content with error recovery hints
+                    content = self._build_tool_result_content(
+                        result, tc.name, last_failed_tool, consecutive_errors
                     )
 
-            # Case 3: Response with content but also tool calls
-            # (handled by Case 2 — content is preserved in assistant_msg)
+                    # Track consecutive errors
+                    if not result.success:
+                        consecutive_errors += 1
+                        last_failed_tool = tc.name
+                    else:
+                        consecutive_errors = 0
+                        last_failed_tool = None
 
-            # Case 4: Neither content nor tool calls (shouldn't happen)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": content,
+                    })
+
+            # Case 3: Neither content nor tool calls (shouldn't happen)
             elif not llm_response.content and not llm_response.has_tool_calls:
                 logger.warning("LLM returned empty response")
-                messages.append(
-                    {"role": "assistant", "content": ""}
-                )
+                messages.append({"role": "assistant", "content": ""})
 
         # Max steps exceeded
         logger.warning(f"Agent exceeded {self.MAX_STEPS} steps")
@@ -158,43 +196,57 @@ class AgentOrchestrator:
             steps_taken=self.MAX_STEPS,
             tools_used=tools_used,
             total_tokens=total_tokens,
+            goal=user_message,
         )
 
-    async def _build_system_prompt(self, context: AgentContext) -> str:
-        """Build immutable system prompt"""
-        parts = []
+    def _get_step_params(
+        self,
+        step: int,
+        tool_definitions: List[Dict[str, Any]],
+        messages: List[Dict[str, Any]],
+    ) -> tuple:
+        """Determine max_tokens and tool availability for this step.
 
-        # Immutable prefix
-        parts.append("あなたはDiscordサーバーで活動するAIアシスタント「らじたん」です。")
-        parts.append("ラジオDJのようなフレンドリーな口調で、ユーザーと楽しくやり取りしてください。")
+        - Normal steps: 1500 tokens, tools available
+        - Near-end steps: 800 tokens, tools available (encourage wrapping up)
+        - Final step: 800 tokens, no tools (force text response)
+        """
+        if step == self.MAX_STEPS - 1:
+            # Absolute last step: force final answer
+            messages.append({
+                "role": "user",
+                "content": (
+                    "【システム】これが最後のステップです。"
+                    "ツールを使わず、今までの結果をもとに最終回答してください。"
+                ),
+            })
+            return 800, None
+        elif step >= self.MAX_STEPS - 2:
+            # Near the end: encourage conclusion
+            return 800, tool_definitions if tool_definitions else None
+        else:
+            # Normal step: full thinking room
+            return 1500, tool_definitions if tool_definitions else None
 
-        # Character personality
-        try:
-            character = await self.character_manager.get_character(context.guild_id)
-            if character and hasattr(character, "system_prompt") and character.system_prompt:
-                parts.append(f"\n## キャラクター設定\n{character.system_prompt}")
-        except Exception as e:
-            logger.warning(f"Failed to get character: {e}")
+    def _build_tool_result_content(
+        self,
+        result: ToolResult,
+        tool_name: str,
+        last_failed_tool: Optional[str],
+        consecutive_errors: int,
+    ) -> str:
+        """Build tool result content with error recovery hints when needed."""
+        content = result.to_content_string()
 
-        # Tool usage instructions
-        parts.append("\n## ツールの使い方")
-        parts.append("利用可能なツールを使って、ユーザーのリクエストに応えてください。")
-        parts.append("複数のツールを組み合わせて、段階的にタスクを完了できます。")
-        parts.append("ツールを使わなくても答えられる質問には、直接テキストで回答してください。")
-        parts.append("ツールの実行結果を確認してから、次のアクションを決定してください。")
-        parts.append("最終的にユーザーへの応答をテキストで返してください。")
-
-        # Recent conversation context
-        try:
-            recent_msgs = await self.conversation_tracker.get_recent_conversation(
-                context.channel_id, duration_minutes=30
+        # If same tool failed twice in a row, add a recovery hint
+        if (
+            not result.success
+            and tool_name == last_failed_tool
+            and consecutive_errors >= 1
+        ):
+            content += (
+                "\n\n【注意】このツールは2回連続で失敗しました。"
+                "別のアプローチを試すか、ユーザーに状況を説明してください。"
             )
-            if recent_msgs:
-                convo_lines = []
-                for m in recent_msgs[-10:]:  # Last 10 messages for context
-                    convo_lines.append(f"{m.username}: {m.content[:200]}")
-                parts.append(f"\n## 最近の会話\n" + "\n".join(convo_lines))
-        except Exception as e:
-            logger.warning(f"Failed to get recent conversation: {e}")
 
-        return "\n".join(parts)
+        return content
