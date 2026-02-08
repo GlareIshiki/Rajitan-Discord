@@ -4,14 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-AIラジオDJ風Discordボット。会話を追跡し、要約・クイズ・音楽レコメンドを能動的に提供する。
-FastAPIでWebダッシュボード（RajitanWebUI）向けのAPIも提供。
+AIラジオDJ風Discordボット「らじたん」。会話を追跡し、要約・クイズ・音楽レコメンドを能動的に提供する。
+DeepSeek v3による自律エージェントシステムを搭載。FastAPIでWebダッシュボード（RajitanWebUI）向けのAPIも提供。
 
 ## Tech Stack
 
 - Python 3.11/3.12（3.13非対応: audioop削除のため）
 - discord.py 2.3.2
-- OpenAI API (gpt-4o-mini) via AsyncOpenAI
+- DeepSeek v3 (deepseek-chat) — エージェントの頭脳（function calling）
+- OpenAI API (gpt-4o-mini) — レガシー機能（要約・クイズ・音楽・感情分析）
 - FastAPI + uvicorn（Web API）
 - Redis（任意、メモリフォールバックあり）
 - SQLite (aiosqlite)
@@ -21,19 +22,18 @@ FastAPIでWebダッシュボード（RajitanWebUI）向けのAPIも提供。
 ```bash
 # セットアップ
 python -m venv venv
-source venv/bin/activate      # Linux / macOS
-# venv\Scripts\activate       # Windows
+source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env          # 必須: DISCORD_BOT_TOKEN, OPENAI_API_KEY
+cp .env.example .env          # 必須: DISCORD_BOT_TOKEN, DEEPSEEK_API_KEY
 
 # 起動
 python -m rajitan.main
 
 # テスト
 pip install -r requirements-dev.txt
-pytest rajitan/tests/ -v
-pytest rajitan/tests/test_validators.py -v  # 単体テスト実行
-pytest rajitan/tests/ -v -k "test_name"     # 特定テスト実行
+python -m pytest rajitan/tests/ -v
+python -m pytest rajitan/tests/test_validators.py -v  # 単体テスト
+python -m pytest rajitan/tests/ -v -k "test_name"     # 特定テスト
 ```
 
 ## Architecture
@@ -41,27 +41,44 @@ pytest rajitan/tests/ -v -k "test_name"     # 特定テスト実行
 DIパターン。`main.py` の `RajitanApplication` が全サービスを初期化し、`RajitanBot` に注入する。
 Bot + FastAPI は `asyncio.gather()` で並行起動。シグナル（SIGINT/SIGTERM）で逆順にグレースフルシャットダウン。
 
+### Dual-LLM構成
+
+```
+DeepSeek v3 (deepseek-chat)          OpenAI (gpt-4o-mini)
+  ↓                                     ↓
+AgentOrchestrator                    OpenAIClient
+  └── 思考・計画・ツール実行            └── 要約・クイズ・音楽・感情分析
+```
+
+`DEEPSEEK_API_KEY` 設定時はエージェントがDeepSeekを使用。未設定時はOpenAIにフォールバック。
+
+### 初期化ツリー
+
 ```
 RajitanApplication (main.py)
   ├── SQLiteClient, RedisClient
-  ├── OpenAIClient, YouTubeClient, SpotifyClient
+  ├── OpenAIClient (gpt-4o-mini), YouTubeClient, SpotifyClient
   ├── CharacterManager, ConversationTracker/Analyzer/Summarizer
   ├── QuizGenerator/Runner, MusicRecommender
   ├── EnhancedScheduleManager, TriggerManager
   ├── LeveMagiClient
-  ├── AgentOrchestrator ← LLMProvider + ToolRegistry(15tools) + 既存サービス
+  ├── AgentOrchestrator ← DeepSeek/OpenAI + ToolRegistry(15tools) + 既存サービス
   └── RajitanBot ← inject_dependencies() で全サービス注入
 ```
 
+### ディレクトリ構造
+
 ```
 rajitan/
-├── agent/         # AIエージェントシステム（Phase 1実装済み）
-│   ├── orchestrator.py  # エージェントループ（MAX_STEPS=15、append-onlyコンテキスト）
-│   ├── llm/       # LLMプロバイダー抽象化（base.py: ABC, openai_provider.py: function calling）
-│   ├── tools/     # ツールシステム（base.py: Tool ABC/ToolRegistry, 各種ツール実装）
+├── agent/         # AIエージェントシステム
+│   ├── orchestrator.py     # エージェントループ（MAX_STEPS=15）
+│   ├── prompts.py          # 思考プロトコル付きシステムプロンプト構築
+│   ├── context_manager.py  # コンテキストウィンドウ管理（トークン概算・圧縮）
+│   ├── llm/       # LLMプロバイダー抽象化（DeepSeek/OpenAI共通）
+│   ├── tools/     # ツールシステム（base.py: Tool ABC/ToolRegistry, 15ツール）
 │   └── memory/    # メモリ管理（Phase 2で実装予定）
 ├── bot/           # Discord bot本体（client.py, commands.py, levemagi_commands.py）
-├── character/     # AIキャラクター管理・性格・プロンプト
+├── character/     # AIキャラクター管理・性格・プロンプト（8種: default〜rajitan）
 ├── conversation/  # 会話トラッキング・分析・要約
 ├── features/      # クイズ(quiz/)・音楽レコメンド(music/)・LeveMagi通知
 ├── api/           # OpenAI・Spotify・YouTube クライアント
@@ -73,20 +90,32 @@ rajitan/
 └── tests/         # pytest テスト（conftest.pyにモックfixtures）
 ```
 
-## Key Patterns
+## Agent System
 
-### Agent System (Primary — Phase 1実装済み)
-メンション時の処理フロー: `on_message` → `_handle_mention_with_agent()` → `AgentOrchestrator.execute()` → LLM + Tool Loop
+### 処理フロー
 
-```
-AgentOrchestrator (agent/orchestrator.py)
-  ├── LLMProvider.chat_completion(messages + tool_definitions)
-  ├── ToolRegistry.execute(tool_name, args)  # 15ツール登録済み
-  ├── append-onlyコンテキスト（エラー履歴も保持）
-  └── MAX_STEPS=15 で強制終了
-```
+`on_message` → `_handle_mention_with_agent()` → `AgentOrchestrator.execute()` → LLM + Tool Loop
 
-**登録ツール一覧（15個）:**
+### 思考プロトコル（prompts.py）
+
+LLMに構造化された思考プロセスを指示:
+1. 【理解】ユーザーのリクエストを把握
+2. 【判断】ツールが必要か判断
+3. 【計画】複数ステップなら実行順序を決定
+4. 【実行】ツール呼び出し
+5. 【確認】結果がユーザーの目的を達成したか検証
+6. 【応答】自然な言葉でユーザーに伝える
+
+### エージェントループの仕組み（orchestrator.py）
+
+- **append-onlyコンテキスト**: メッセージ履歴は追加のみ、エラー履歴も保持
+- **適応的max_tokens**: 通常1500 → 終盤800 → 最終ステップはツール無効化しテキスト応答を強制
+- **目標追跡**: 4ステップごとにユーザーの元のリクエストをリマインダーとして注入
+- **エラー回復**: 同一ツール2回連続失敗で回復ヒントを注入
+- **コンテキスト管理**: 80Kトークン超過で古い交換を圧縮（context_manager.py）
+
+### 登録ツール（15個）
+
 | Tool | 既存サービス | 機能 |
 |---|---|---|
 | `summary` | ConversationSummarizer | 会話要約 |
@@ -104,7 +133,10 @@ AgentOrchestrator (agent/orchestrator.py)
 - ツール定義は起動時に全ロード、動的追加・削除しない
 
 ### Intent Routing (Legacy Fallback)
+
 `agent_orchestrator`がNoneの場合のみ使用。`IntentClassifier` → `IntentRouter` → `IntentHandler`
+
+## Key Patterns
 
 ### Decorators (Cross-cutting Concerns)
 ```python
@@ -114,17 +146,15 @@ AgentOrchestrator (agent/orchestrator.py)
 
 ## Key Files
 
-- `rajitan/main.py` — エントリーポイント。ProcessManager（PIDファイルで重複起動防止）+ RajitanApplication（ライフサイクル管理）+ エージェントシステム初期化
-- `rajitan/bot/client.py` — RajitanBot。メンション → `_handle_mention_with_agent()` → AgentOrchestrator（フォールバック: legacy NLP）
-- `rajitan/bot/commands.py` — スラッシュコマンド（/setup, /personality, /chat, /summary, /quiz, /music, /schedules, /status, /help）
-- `rajitan/agent/orchestrator.py` — AgentOrchestrator。メインエージェントループ（plan → tool → verify → loop）
-- `rajitan/agent/llm/base.py` — LLMProvider ABC、LLMResponse、ToolCallデータクラス
-- `rajitan/agent/llm/openai_provider.py` — OpenAI function calling実装。既存AsyncOpenAIインスタンスを再利用
-- `rajitan/agent/tools/base.py` — Tool ABC、ToolResult、ToolRegistry（全ツール管理）
-- `rajitan/scheduler/enhanced_manager.py` — スケジュール実行（DB永続化、cron風パターン、60秒ポーリング）
-- `rajitan/utils/config.py` — .envからの設定読み込み（70+項目）
-- `rajitan/utils/decorators.py` — `@handle_async_errors`, `@with_retries`
-- `rajitan/utils/validators.py` — 入力バリデーション一元管理（Discord ID, プロンプト長, インターバル範囲等）
+- `rajitan/main.py` — エントリーポイント。ProcessManager + RajitanApplication + エージェント初期化（DeepSeek/OpenAI分岐）
+- `rajitan/bot/client.py` — RajitanBot。メンション → `_handle_mention_with_agent()` → AgentOrchestrator
+- `rajitan/agent/orchestrator.py` — エージェントループ。思考→ツール→検証→応答
+- `rajitan/agent/prompts.py` — AgentPromptBuilder。思考プロトコル・エラー対応・応答ルールを含むシステムプロンプト構築
+- `rajitan/agent/context_manager.py` — ContextManager。トークン概算（日本語3文字≈1トークン）・コンテキスト圧縮
+- `rajitan/agent/llm/openai_provider.py` — OpenAI互換API実装（DeepSeek/OpenAI共用）
+- `rajitan/agent/tools/base.py` — Tool ABC、ToolResult、ToolRegistry
+- `rajitan/utils/config.py` — .envからの設定読み込み
+- `rajitan/utils/validators.py` — 入力バリデーション一元管理
 
 ## Web API (FastAPI)
 
@@ -134,7 +164,7 @@ AgentOrchestrator (agent/orchestrator.py)
 - `rajitan/web/server.py` — FastAPIアプリ作成、CORS、サービスstate注入
 - `rajitan/web/auth.py` — Discord OAuth認証（Redisセッション）
 - `rajitan/web/routes/bot.py` — `/api/bot/stats`, `/api/bot/guilds`, `/api/bot/activity`, `/api/bot/stats/users`
-- `rajitan/web/routes/levemagi.py` — `/api/levemagi/*` LeveMagi CRUD（Nuts/Leaves/Trunks/Roots/Portals/Resources/Tags/User/Gacha）
+- `rajitan/web/routes/levemagi.py` — `/api/levemagi/*` LeveMagi CRUD
 - `rajitan/web/routes/calendar.py` — カレンダー関連
 
 ## Storage
@@ -145,20 +175,20 @@ AgentOrchestrator (agent/orchestrator.py)
 
 ## Environment Variables
 
-必須: `DISCORD_BOT_TOKEN`, `OPENAI_API_KEY`
-任意: `YOUTUBE_API_KEY`, `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` (なくてもYouTube検索URLで動作)
+必須: `DISCORD_BOT_TOKEN`
+LLM: `DEEPSEEK_API_KEY`（エージェント用）, `OPENAI_API_KEY`（レガシー機能用）
+任意: `YOUTUBE_API_KEY`, `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET`
 任意: `REDIS_HOST`/`REDIS_PORT` (なければメモリフォールバック)
 API: `API_ENABLED=true`, `API_HOST`, `API_PORT=8000`, `API_CORS_ORIGINS`
 
 ## Key Decisions
 
 - 全体が**async/await**設計（aiosqlite, AsyncOpenAI, discord.py async）
+- エージェントはDeepSeek v3主軸、OpenAIは既存機能で継続使用（Dual-LLM）
 - イベントハンドラは `client.py` に直接実装（Cog分離はしない）
-- `SchedulerManager`（基本版）は削除済み。`EnhancedScheduleManager` が唯一のスケジューラ
-- 音楽レコメンドはAPIキーなしでもYouTube検索URLで動作
-- 会話データはRedis/メモリに保存するが、不足時はDiscord API履歴にフォールバック
-- 入力バリデーションは `utils/validators.py` で一元管理
-- パーソナリティ7種: default, cheerful, calm, witty, professional, friendly, sarcastic
+- `EnhancedScheduleManager` が唯一のスケジューラ
+- 会話データはRedis/メモリに保存、不足時はDiscord API履歴にフォールバック
+- パーソナリティ8種: default, cheerful, calm, witty, professional, friendly, sarcastic, rajitan
 
 ## Deployment
 
@@ -166,7 +196,6 @@ API: `API_ENABLED=true`, `API_HOST`, `API_PORT=8000`, `API_CORS_ORIGINS`
 - **RajitanWebUI** → Vercel（GitHub連携で自動デプロイ）
 - **API URL**: `https://api.glareishiki.com` → nginx (HTTPS:443) → FastAPI (localhost:8000)
 - **SSL**: Let's Encrypt (certbot自動更新)
-- **nginx設定**: `/etc/nginx/sites-available/rajitan-api`
 
 ### VPS運用コマンド（systemd）
 
@@ -186,8 +215,7 @@ cd ~/Rajitan-Discord && git pull && sudo systemctl restart rajitan
 ```
 
 - サービス定義: `/etc/systemd/system/rajitan.service`（ソース: `rajitan.service`）
-- クラッシュ時は10秒後に自動再起動
-- VPS再起動時も自動起動（enabled）
+- クラッシュ時は10秒後に自動再起動、VPS再起動時も自動起動
 
 ## 関連リポジトリ
 

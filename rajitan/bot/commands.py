@@ -564,6 +564,25 @@ class RajitanCommands(commands.Cog):
                 inline=True,
             )
 
+            # Agent system info
+            if self.bot.agent_orchestrator:
+                orch = self.bot.agent_orchestrator
+                llm_model = orch.llm.model
+                # Detect provider from base_url
+                base_url = str(getattr(orch.llm.client, "base_url", ""))
+                if "deepseek" in base_url:
+                    provider = "DeepSeek"
+                else:
+                    provider = "OpenAI"
+                tool_count = len(orch.tools)
+                embed.add_field(
+                    name="エージェント",
+                    value=f"LLM: {provider} ({llm_model})\n"
+                          f"ツール数: {tool_count}\n"
+                          f"最大ステップ: {orch.MAX_STEPS}",
+                    inline=True,
+                )
+
             await interaction.followup.send(embed=embed)
 
         except Exception as e:
