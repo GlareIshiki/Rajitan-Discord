@@ -731,30 +731,37 @@ class SQLiteClient:
         from rajitan.character.prompts import PERSONALITY_TRAITS, get_system_prompt
 
         PRESET_DESCRIPTIONS = {
-            "default": ("バランスの取れた標準パーソナリティ", "バランスの取れた標準パーソナリティ"),
-            "rajitan": ("ノリと勢いのらじたん本人☆", "ノリと勢いのらじたん本人 テンポよくフランクに接する"),
-            "cheerful": ("元気で明るく陽気な性格", "元気で明るく陽気な性格"),
-            "calm": ("落ち着いてリラックスした性格", "落ち着いていてリラックスした性格"),
-            "witty": ("ユーモアたっぷりの切れ者", "ユーモアたっぷりの切れ者"),
-            "professional": ("丁寧でフォーマルな対応", "丁寧でフォーマルな対応"),
-            "friendly": ("親しみやすくフレンドリー", "親しみやすくフレンドリー"),
-            "sarcastic": ("皮肉屋だけど愛嬌がある", "皮肉屋だけど愛嬌がある"),
+            "default": ("ナチュラル", "バランスの取れた標準パーソナリティ"),
+            "rajitan": ("らじたん", "ノリと勢いのらじたん本人 テンポよくフランクに接する"),
+            "cheerful": ("ひなた", "元気で明るく陽気な性格"),
+            "calm": ("凪", "落ち着いていてリラックスした性格"),
+            "witty": ("キレモノ", "ユーモアたっぷりの切れ者"),
+            "professional": ("ノーブル", "丁寧でフォーマルな対応"),
+            "friendly": ("ほのか", "親しみやすくフレンドリー"),
+            "sarcastic": ("ツンデレ", "皮肉屋だけど愛嬌がある"),
         }
 
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 for ptype, traits in PERSONALITY_TRAITS.items():
                     persona_id = f"preset_{ptype}"
-                    async with db.execute(
-                        "SELECT id FROM personas WHERE id = ?", (persona_id,)
-                    ) as cursor:
-                        if await cursor.fetchone():
-                            continue
-
                     display_name, description = PRESET_DESCRIPTIONS.get(
                         ptype, (ptype, ptype)
                     )
                     system_prompt = get_system_prompt("らじたん", ptype)
+
+                    async with db.execute(
+                        "SELECT id FROM personas WHERE id = ?", (persona_id,)
+                    ) as cursor:
+                        if await cursor.fetchone():
+                            # Update display_name/description for existing presets
+                            await db.execute(
+                                '''UPDATE personas
+                                   SET display_name = ?, description = ?
+                                   WHERE id = ? AND is_preset = 1''',
+                                (display_name, description, persona_id),
+                            )
+                            continue
 
                     await db.execute(
                         '''INSERT INTO personas
