@@ -289,6 +289,19 @@ class SQLiteClient:
                 )
             ''')
 
+            # Google Calendar tokens table
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS google_tokens (
+                    discord_id TEXT PRIMARY KEY,
+                    access_token TEXT,
+                    refresh_token TEXT NOT NULL,
+                    token_expiry TEXT,
+                    email TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
             # Bot activities table
             await db.execute('''
                 CREATE TABLE IF NOT EXISTS bot_activities (

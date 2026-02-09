@@ -233,6 +233,30 @@ async def get_events(
                 "is_all_day": False,
             })
 
+    # 4. Google Calendar events (if connected)
+    google_client = app_state.get("google_calendar_client")
+    if google_client:
+        try:
+            range_from_iso = range_from.isoformat() if range_from else None
+            range_to_iso = range_to.isoformat() if range_to else None
+            google_events = await google_client.get_events(
+                discord_id, range_from_iso, range_to_iso
+            )
+            for ge in google_events:
+                events.append({
+                    "id": f"google-{ge['id']}",
+                    "title": ge["summary"],
+                    "description": ge.get("description", ""),
+                    "start_time": ge["start_time"],
+                    "end_time": ge.get("end_time"),
+                    "event_type": "google",
+                    "source_id": ge["id"],
+                    "color": "#16a34a",  # green
+                    "is_all_day": ge.get("is_all_day", False),
+                })
+        except Exception as e:
+            logger.warning(f"Google Calendar fetch failed: {e}")
+
     # Sort all events by start_time
     events.sort(key=lambda e: e["start_time"] or "")
 

@@ -23,6 +23,7 @@ from rajitan.features.music.recommender import MusicRecommender
 from rajitan.api.youtube_client import YouTubeClient
 from rajitan.api.spotify_client import SpotifyClient
 from rajitan.storage.levemagi_client import LeveMagiClient
+from rajitan.api.google_calendar_client import GoogleCalendarClient
 from rajitan.web.server import create_app, app_state
 from rajitan.utils.logger import get_logger
 from rajitan.utils.config import get_config
@@ -108,6 +109,7 @@ class RajitanApplication:
         self.youtube_client: Optional[YouTubeClient] = None
         self.spotify_client: Optional[SpotifyClient] = None
         self.levemagi_client: Optional[LeveMagiClient] = None
+        self.google_calendar_client: Optional[GoogleCalendarClient] = None
         self.fastapi_app = None
         self.process_manager = ProcessManager()
         self.running = False
@@ -174,6 +176,11 @@ class RajitanApplication:
             # Initialize LeveMagi client
             logger.info("Initializing LeveMagi client...")
             self.levemagi_client = LeveMagiClient(self.db_client.db_path)
+
+            # Initialize Google Calendar client
+            if config.google_client_id and config.google_client_secret:
+                logger.info("Initializing Google Calendar client...")
+                self.google_calendar_client = GoogleCalendarClient(self.db_client.db_path)
 
             # Initialize Discord bot first
             logger.info("Initializing Discord bot...")
@@ -295,6 +302,8 @@ class RajitanApplication:
                 app_state["conversation_summarizer"] = self.conversation_summarizer
                 app_state["enhanced_schedule_manager"] = self.enhanced_schedule_manager
                 app_state["levemagi_client"] = self.levemagi_client
+                if self.google_calendar_client:
+                    app_state["google_calendar_client"] = self.google_calendar_client
 
             logger.info("Rajitan application initialized successfully")
             
@@ -357,6 +366,9 @@ class RajitanApplication:
                 await self.enhanced_schedule_manager.stop()
 
             # Close API clients
+            if self.google_calendar_client:
+                await self.google_calendar_client.close()
+
             if self.youtube_client:
                 await self.youtube_client.close()
 

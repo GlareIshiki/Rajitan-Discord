@@ -50,6 +50,14 @@ class Config:
         # Brave Search API Configuration
         self.brave_search_api_key = os.getenv("BRAVE_SEARCH_API_KEY")
 
+        # Google Calendar Configuration
+        self.google_client_id = os.getenv("GOOGLE_CLIENT_ID")
+        self.google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+        self.google_redirect_uri = os.getenv(
+            "GOOGLE_REDIRECT_URI",
+            "https://api.glareishiki.com/api/google/callback",
+        )
+
         # API Server Configuration
         self.api_host = os.getenv("API_HOST", "0.0.0.0")
         self.api_port = int(os.getenv("API_PORT", "8000"))
