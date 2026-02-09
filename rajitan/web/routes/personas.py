@@ -59,8 +59,8 @@ async def get_persona(guild_id: str, persona_id: str, user=Depends(get_current_u
             detail="Persona not found",
         )
 
-    # Verify accessible to this guild
-    if persona.guild_id and persona.guild_id != guild_id:
+    # Verify accessible to this guild (own guild, preset, or public)
+    if persona.guild_id and persona.guild_id != guild_id and not persona.is_public:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Persona not found",
@@ -232,6 +232,7 @@ def _persona_to_dict(persona) -> dict:
         "system_prompt": persona.system_prompt,
         "personality_traits": persona.personality_traits,
         "is_preset": persona.is_preset,
+        "is_public": persona.is_public,
         "created_by": persona.created_by,
         "created_at": persona.created_at.isoformat() if persona.created_at else None,
         "updated_at": persona.updated_at.isoformat() if persona.updated_at else None,

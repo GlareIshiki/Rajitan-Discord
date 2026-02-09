@@ -23,6 +23,7 @@ class Persona(BaseModel):
         }
     )
     is_preset: bool = False
+    is_public: bool = False                             # True = visible to all guilds
     created_by: str = ""                                # Discord user ID
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
@@ -35,6 +36,7 @@ class PersonaCreate(BaseModel):
     description: str = ""
     system_prompt: str = ""
     personality_traits: Optional[Dict[str, float]] = None
+    is_public: bool = False
 
 
 class PersonaUpdate(BaseModel):
@@ -44,3 +46,4 @@ class PersonaUpdate(BaseModel):
     description: Optional[str] = None
     system_prompt: Optional[str] = None
     personality_traits: Optional[Dict[str, float]] = None
+    is_public: Optional[bool] = None

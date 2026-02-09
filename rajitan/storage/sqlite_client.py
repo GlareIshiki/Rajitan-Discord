@@ -380,6 +380,14 @@ class SQLiteClient:
             except Exception:
                 pass  # Column already exists
 
+            # Add is_public flag to personas (idempotent)
+            try:
+                await db.execute(
+                    "ALTER TABLE personas ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0"
+                )
+            except Exception:
+                pass  # Column already exists
+
             await db.commit()
     
     # Guild operations
@@ -791,8 +799,8 @@ class SQLiteClient:
                     '''INSERT INTO personas
                        (id, guild_id, name, display_name, description,
                         system_prompt, personality_traits, is_preset, created_by,
-                        created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                        created_at, updated_at, is_public)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                     (
                         persona.id,
                         persona.guild_id,
@@ -805,6 +813,7 @@ class SQLiteClient:
                         persona.created_by,
                         persona.created_at,
                         persona.updated_at,
+                        int(persona.is_public),
                     ),
                 )
                 await db.commit()
@@ -820,7 +829,7 @@ class SQLiteClient:
                 async with db.execute(
                     '''SELECT id, guild_id, name, display_name, description,
                               system_prompt, personality_traits, is_preset, created_by,
-                              created_at, updated_at
+                              created_at, updated_at, is_public
                        FROM personas WHERE id = ?''',
                     (persona_id,),
                 ) as cursor:
@@ -839,9 +848,9 @@ class SQLiteClient:
                 async with db.execute(
                     '''SELECT id, guild_id, name, display_name, description,
                               system_prompt, personality_traits, is_preset, created_by,
-                              created_at, updated_at
+                              created_at, updated_at, is_public
                        FROM personas
-                       WHERE guild_id = '' OR guild_id = ?
+                       WHERE guild_id = '' OR guild_id = ? OR is_public = 1
                        ORDER BY is_preset DESC, created_at ASC, name ASC''',
                     (guild_id,),
                 ) as cursor:
@@ -872,6 +881,9 @@ class SQLiteClient:
                     if key == "personality_traits" and isinstance(value, dict):
                         set_parts.append("personality_traits = ?")
                         params.append(json.dumps(value))
+                    elif key == "is_public":
+                        set_parts.append("is_public = ?")
+                        params.append(int(value))
                     elif key in ("name", "display_name", "description", "system_prompt"):
                         set_parts.append(f"{key} = ?")
                         params.append(value)
@@ -942,7 +954,7 @@ class SQLiteClient:
             async with aiosqlite.connect(self.db_path) as db:
                 # Verify persona exists and is accessible to this guild
                 async with db.execute(
-                    "SELECT id FROM personas WHERE id = ? AND (guild_id = '' OR guild_id = ?)",
+                    "SELECT id FROM personas WHERE id = ? AND (guild_id = '' OR guild_id = ? OR is_public = 1)",
                     (persona_id, guild_id),
                 ) as cursor:
                     if not await cursor.fetchone():
@@ -977,6 +989,7 @@ class SQLiteClient:
             system_prompt=row[5] or "",
             personality_traits=traits,
             is_preset=bool(row[7]),
+            is_public=bool(row[11]) if len(row) > 11 else False,
             created_by=row[8] or "",
             created_at=datetime.fromisoformat(row[9]) if row[9] else datetime.now(),
             updated_at=datetime.fromisoformat(row[10]) if row[10] else datetime.now(),

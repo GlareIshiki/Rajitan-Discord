@@ -470,6 +470,7 @@ class CharacterManager:
                 system_prompt=system_prompt,
                 personality_traits=traits,
                 is_preset=False,
+                is_public=data.is_public,
                 created_by=created_by,
             )
 
@@ -509,6 +510,8 @@ class CharacterManager:
                     k: max(0.0, min(1.0, v))
                     for k, v in data.personality_traits.items()
                 }
+            if data.is_public is not None:
+                updates["is_public"] = data.is_public
 
             if not updates:
                 return False
