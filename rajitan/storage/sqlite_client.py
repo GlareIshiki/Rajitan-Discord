@@ -842,7 +842,7 @@ class SQLiteClient:
                               created_at, updated_at
                        FROM personas
                        WHERE guild_id = '' OR guild_id = ?
-                       ORDER BY is_preset DESC, name ASC''',
+                       ORDER BY is_preset DESC, created_at ASC, name ASC''',
                     (guild_id,),
                 ) as cursor:
                     rows = await cursor.fetchall()
