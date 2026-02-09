@@ -18,8 +18,9 @@ class InstagramPostTool(Tool):
     max_calls_per_execution = 2
     description = (
         "ユーザーのInstagramに画像を投稿する。画像URLとキャプションを指定する。"
-        "ユーザーがDiscordに添付した画像URL、AI生成画像URL、CanvaエクスポートURLなどを使える。"
+        "ユーザーがDiscordに添付した画像URL、generate_imageの結果のimage_path、CanvaエクスポートURLなどを使える。"
         "事前にinstagram_statusでユーザーの連携状態を確認すること。"
+        "未連携の場合はWebUI（https://rajitan.glareishiki.com）から連携するよう案内する。"
     )
     parameters = {
         "type": "object",
@@ -73,6 +74,8 @@ class InstagramStatusTool(Tool):
     description = (
         "ユーザーのInstagram連携状態を確認する。"
         "アカウントがリンクされているか、リンクされている場合はInstagramユーザー名を返す。"
+        "未連携の場合、ユーザーにはWebUI（https://rajitan.glareishiki.com）から連携できることを伝える。"
+        "結果のJSONデータをそのまま見せず、自然な言葉で伝えること。"
     )
     parameters = {
         "type": "object",
