@@ -71,9 +71,13 @@ def create_app() -> FastAPI:
     from rajitan.web.routes.calendar import router as calendar_router
     from rajitan.web.routes.bot import router as bot_router
     from rajitan.web.routes.google_auth import router as google_router
+    from rajitan.web.routes.workflow import router as workflow_router
+    from rajitan.web.routes.personas import router as personas_router
     app.include_router(levemagi_router, prefix="/api/levemagi")
     app.include_router(calendar_router, prefix="/api/calendar")
     app.include_router(bot_router, prefix="/api/bot")
     app.include_router(google_router, prefix="/api/google")
+    app.include_router(workflow_router, prefix="/api/workflow")
+    app.include_router(personas_router, prefix="/api/bot")
 
     return app

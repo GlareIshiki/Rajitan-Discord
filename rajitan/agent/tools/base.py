@@ -1,9 +1,12 @@
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from rajitan.utils.logger import get_logger
+
+if TYPE_CHECKING:
+    from rajitan.agent.workflow.schema import ToolsConfig
 
 logger = get_logger("agent.tools")
 
@@ -79,8 +82,10 @@ class ToolRegistry:
     def get(self, name: str) -> Optional[Tool]:
         return self._tools.get(name)
 
-    async def execute(self, name: str, **kwargs) -> ToolResult:
+    async def execute(self, name: str, disabled: set = None, **kwargs) -> ToolResult:
         """Execute a tool by name, enforcing per-execution call limits"""
+        if disabled and name in disabled:
+            return ToolResult(success=False, error=f"Tool '{name}' is disabled.")
         tool = self.get(name)
         if tool is None:
             return ToolResult(success=False, error=f"Unknown tool: {name}")
@@ -102,6 +107,47 @@ class ToolRegistry:
 
     def get_function_definitions(self) -> List[Dict[str, Any]]:
         """Get all tool definitions for OpenAI function calling"""
+        return [tool.get_function_definition() for tool in self._tools.values()]
+
+    def apply_workflow_config(self, tools_config: "ToolsConfig") -> None:
+        """Apply base workflow tool configuration at startup (non-destructive)."""
+        # Apply default max_calls to all tools
+        for tool in self._tools.values():
+            tool.max_calls_per_execution = tools_config.default_max_calls
+
+        # Apply per-tool overrides
+        for name, override in tools_config.overrides.items():
+            tool = self._tools.get(name)
+            if tool:
+                tool.max_calls_per_execution = override.max_calls_per_execution
+                logger.info(f"Tool '{name}' max_calls set to {override.max_calls_per_execution}")
+
+    def apply_per_execution_config(self, tools_config: "ToolsConfig") -> set:
+        """Apply per-execution tool config. Returns set of disabled tool names.
+
+        Updates max_calls on tool instances and returns disabled set for filtering.
+        Call reset_call_counts() before this method.
+        """
+        # Apply default max_calls
+        for tool in self._tools.values():
+            tool.max_calls_per_execution = tools_config.default_max_calls
+
+        # Apply per-tool overrides
+        for name, override in tools_config.overrides.items():
+            tool = self._tools.get(name)
+            if tool:
+                tool.max_calls_per_execution = override.max_calls_per_execution
+
+        return set(tools_config.disabled)
+
+    def get_function_definitions(self, exclude: set = None) -> List[Dict[str, Any]]:
+        """Get tool definitions for OpenAI function calling, optionally excluding some."""
+        if exclude:
+            return [
+                tool.get_function_definition()
+                for tool in self._tools.values()
+                if tool.name not in exclude
+            ]
         return [tool.get_function_definition() for tool in self._tools.values()]
 
     def list_tools(self) -> List[str]:

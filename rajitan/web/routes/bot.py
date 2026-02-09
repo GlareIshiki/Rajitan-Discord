@@ -176,11 +176,22 @@ async def get_guild_settings(guild_id: str, user=Depends(get_current_user)):
         except Exception as e:
             logger.warning(f"Failed to get guild schedules: {e}")
 
+    # Get active persona id
+    active_persona_id = ""
+    if character_manager and hasattr(character_manager, "resolve_persona"):
+        try:
+            persona = await character_manager.resolve_persona(guild_id)
+            if persona:
+                active_persona_id = persona.id
+        except Exception as e:
+            logger.warning(f"Failed to resolve persona: {e}")
+
     return {
         "guild_id": guild_id,
         "guild_name": guild.name,
         "character_name": character_name,
         "personality_type": personality_type,
+        "active_persona_id": active_persona_id,
         "features": {
             "auto_summary": auto_summary,
             "auto_quiz": auto_quiz,
@@ -191,6 +202,7 @@ async def get_guild_settings(guild_id: str, user=Depends(get_current_user)):
 
 class UpdateGuildSettingsRequest(BaseModel):
     personality_type: Optional[str] = None
+    persona_id: Optional[str] = None
 
 
 @router.put("/guilds/{guild_id}/settings")
@@ -217,15 +229,27 @@ async def update_guild_settings(
             detail="Guild not found",
         )
 
-    if body.personality_type and character_manager:
-        success = await character_manager.update_character_personality(
-            guild_id, body.personality_type
-        )
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to update personality type",
+    if character_manager:
+        # Prefer persona_id if provided
+        if body.persona_id:
+            if hasattr(character_manager, "set_guild_persona"):
+                success = await character_manager.set_guild_persona(
+                    guild_id, body.persona_id
+                )
+                if not success:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Failed to set persona",
+                    )
+        elif body.personality_type:
+            success = await character_manager.update_character_personality(
+                guild_id, body.personality_type
             )
+            if not success:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to update personality type",
+                )
 
     return {"status": "ok", "message": "設定を更新しました"}
 

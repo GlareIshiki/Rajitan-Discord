@@ -135,27 +135,35 @@ class PersonalityManager:
             return base_prompt
 
         traits = self.get_personality_traits(personality_type)
+        return self.customize_prompt_for_traits(base_prompt, traits)
 
+    def customize_prompt_for_traits(self, base_prompt: str, traits: Dict[str, float]) -> str:
+        """Customize prompt based on arbitrary trait values (0.0-1.0)"""
         additions = []
-        
-        if traits["energy"] > 0.7:
+
+        energy = traits.get("energy", 0.6)
+        humor = traits.get("humor", 0.7)
+        formality = traits.get("formality", 0.3)
+        friendliness = traits.get("friendliness", 0.8)
+
+        if energy > 0.7:
             additions.append("元気で活発な性格で話してください。")
-        elif traits["energy"] < 0.4:
+        elif energy < 0.4:
             additions.append("落ち着いてリラックスした性格で話してください。")
-        
-        if traits["humor"] > 0.8:
+
+        if humor > 0.8:
             additions.append("時々ユーモアを交えて楽しい会話をしてください。")
-        
-        if traits["formality"] > 0.6:
+
+        if formality > 0.6:
             additions.append("丁寧で礼儀正しい言葉遣いで話してください。")
-        elif traits["formality"] < 0.3:
+        elif formality < 0.3:
             additions.append("カジュアルで親しみやすい言葉遣いで話してください。")
-        
-        if traits["friendliness"] > 0.8:
+
+        if friendliness > 0.8:
             additions.append("参加者みんなと親しみやすく接してください。")
-        
+
         if additions:
             personality_instruction = "\n\n性格指定:\n" + "\n".join(additions)
             return base_prompt + personality_instruction
-        
+
         return base_prompt

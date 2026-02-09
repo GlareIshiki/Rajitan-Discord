@@ -6,8 +6,9 @@ ResponseGate — エージェント応答の品質ゲート + 会話参加判定
 """
 
 import asyncio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
+from rajitan.agent.workflow.schema import ResponseGateConfig
 from rajitan.utils.logger import get_logger
 
 if TYPE_CHECKING:
@@ -15,7 +16,8 @@ if TYPE_CHECKING:
 
 logger = get_logger("agent.response_gate")
 
-GATE_PROMPT = """あなたはDiscordボットの出力チェッカーです。
+# Fallback prompts used when config has empty strings
+_DEFAULT_GATE_PROMPT = """あなたはDiscordボットの出力チェッカーです。
 ユーザーの発言に対するボットの応答を見て、この応答をユーザーに送信すべきかを判断してください。
 
 以下のような応答はNOです:
@@ -32,7 +34,7 @@ GATE_PROMPT = """あなたはDiscordボットの出力チェッカーです。
 
 この応答はユーザーに送るべき内容ですか？YESかNOだけ答えてください。"""
 
-PARTICIPATE_PROMPT = """あなたはDiscordボット「らじたん」（Rajitan）です。
+_DEFAULT_PARTICIPATE_PROMPT = """あなたはDiscordボット「らじたん」（Rajitan）です。
 直前までユーザーと会話していました。会話はまだ続いています。
 
 最近の会話:
@@ -54,33 +56,35 @@ YES、SKIP、LEAVEのどれか1つだけ答えてください。"""
 class ResponseGate:
     """LLMベースの応答品質ゲート"""
 
-    def __init__(self, llm_provider: "LLMProvider"):
+    def __init__(self, llm_provider: "LLMProvider", gate_config: Optional[ResponseGateConfig] = None):
         self.llm = llm_provider
+        self.cfg = gate_config or ResponseGateConfig()
 
     async def should_send(self, response: str, user_message: str) -> bool:
-        """応答をユーザーに送信すべきか判定する。失敗時はTrue（送信）。"""
+        """応答をユーザーに送信すべきか判定する。失敗時はfailsafe_send。"""
         try:
             return await asyncio.wait_for(
                 self._judge(response, user_message),
-                timeout=10.0,
+                timeout=self.cfg.timeout_seconds,
             )
         except Exception as e:
-            logger.warning(f"ResponseGate failed, defaulting to send: {e}")
-            return True
+            logger.warning(f"ResponseGate failed, defaulting to send={self.cfg.failsafe_send}: {e}")
+            return self.cfg.failsafe_send
 
     async def _judge(self, response: str, user_message: str) -> bool:
-        prompt = GATE_PROMPT.format(
+        gate_prompt = self.cfg.gate_prompt or _DEFAULT_GATE_PROMPT
+        prompt = gate_prompt.format(
             user_message=user_message,
             response=response,
         )
         result = await self.llm.chat_completion(
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=5,
-            temperature=0,
-            thinking=False,
+            max_tokens=self.cfg.max_tokens,
+            temperature=self.cfg.temperature,
+            thinking=self.cfg.thinking,
         )
         if result is None:
-            return True
+            return self.cfg.failsafe_send
         answer = (result.content or "").strip().upper()
         if "NO" in answer:
             logger.info(f"ResponseGate blocked: {response[:80]}...")
@@ -90,29 +94,30 @@ class ResponseGate:
     # --- 会話参加判定 ---
 
     async def should_participate(self, new_message: str, recent_messages: str) -> str:
-        """会話ウィンドウ内での参加判定。"yes"/"skip"/"leave" を返す。失敗時は"skip"。"""
+        """会話ウィンドウ内での参加判定。"yes"/"skip"/"leave" を返す。失敗時はfailsafe_participate。"""
         try:
             return await asyncio.wait_for(
                 self._judge_participation(new_message, recent_messages),
-                timeout=10.0,
+                timeout=self.cfg.timeout_seconds,
             )
         except Exception as e:
-            logger.warning(f"Participation check failed, defaulting to skip: {e}")
-            return "skip"
+            logger.warning(f"Participation check failed, defaulting to {self.cfg.failsafe_participate}: {e}")
+            return self.cfg.failsafe_participate
 
     async def _judge_participation(self, new_message: str, recent_messages: str) -> str:
-        prompt = PARTICIPATE_PROMPT.format(
+        participate_prompt = self.cfg.participate_prompt or _DEFAULT_PARTICIPATE_PROMPT
+        prompt = participate_prompt.format(
             recent_messages=recent_messages,
             new_message=new_message,
         )
         result = await self.llm.chat_completion(
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=5,
-            temperature=0,
-            thinking=False,
+            max_tokens=self.cfg.max_tokens,
+            temperature=self.cfg.temperature,
+            thinking=self.cfg.thinking,
         )
         if result is None:
-            return "skip"
+            return self.cfg.failsafe_participate
         answer = (result.content or "").strip().upper()
         return self._parse_participation(answer, new_message)
 

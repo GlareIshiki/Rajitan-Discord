@@ -11,7 +11,7 @@ DeepSeek v3による自律エージェントシステムを搭載。FastAPIでWe
 
 - Python 3.11/3.12（3.13非対応: audioop削除のため）
 - discord.py 2.3.2
-- DeepSeek v3 (deepseek-chat) — エージェントの頭脳（function calling）
+- DeepSeek v3 (deepseek-chat) — エージェントの頭脳（function calling + thinking mode）
 - OpenAI API (gpt-4o-mini) — レガシー機能（要約・クイズ・音楽・感情分析）
 - FastAPI + uvicorn（Web API）
 - Redis（任意、メモリフォールバックあり）
@@ -52,6 +52,13 @@ AgentOrchestrator                    OpenAIClient
 
 `DEEPSEEK_API_KEY` 設定時はエージェントがDeepSeekを使用。未設定時はOpenAIにフォールバック。
 
+### DeepSeek Thinking Mode
+
+- **エージェント推論には有効**: `orchestrator.py`で`_looks_complex()`がTrueのとき`thinking=True`
+- **分類タスクには不向き**: YES/SKIP/LEAVE判定でcontent空になる問題
+- `thinking=True` + `temperature=0` + `max_tokens`小 → contentが空、reasoning_contentのみ返る
+- **結論**: 分類・判定タスク（ResponseGate等）は必ず`thinking=False`で呼ぶ
+
 ### 初期化ツリー
 
 ```
@@ -63,7 +70,8 @@ RajitanApplication (main.py)
   ├── EnhancedScheduleManager, TriggerManager
   ├── LeveMagiClient
   ├── MemoryManager (3層記憶: Redis + SQLite)
-  ├── AgentOrchestrator ← DeepSeek/OpenAI + ToolRegistry(20tools) + MemoryManager
+  ├── AgentOrchestrator ← DeepSeek/OpenAI + ToolRegistry(22tools) + MemoryManager
+  ├── ResponseGate ← LLM品質ゲート + 会話参加判定
   └── RajitanBot ← inject_dependencies() で全サービス注入
 ```
 
@@ -74,27 +82,41 @@ RajitanApplication (main.py)
 ```
 on_message
   ├── (pending_action あり) → メンション不要でエージェント起動
-  └── (メンション検出)     → handle_mention → エージェント起動
+  ├── (メンション検出)     → handle_mention → エージェント起動
+  └── (会話ウィンドウ内)   → ResponseGate.should_participate → yes/skip/leave
       ↓
 _handle_mention_with_agent()
       ↓
 AgentOrchestrator.execute()
+  ├── _looks_complex() → thinking mode判定
   ├── システムプロンプト構築（キャラ + 思考プロトコル + 記憶 + 会話履歴）
   ├── LLM呼び出し → ツール実行 → 結果追記（append-only）
-  ├── 4ステップごとにゴールリマインダー注入
+  ├── build_step_injection(): 3ステップごとに反省 + 残ステップ警告
   ├── MAX_STEPS(15)到達 or 最終テキスト応答 → ループ終了
   └── AgentMemoryWriter → 3層記憶に自動書き込み
+      ↓
+ResponseGate.should_send() → LLM品質チェック後に送信
 ```
+
+### ResponseGate（応答品質ゲート + 会話参加判定）
+
+`rajitan/agent/response_gate.py` — DeepSeekを**non-thinking**で呼び出し。
+
+- `should_send(response, user_message)`: 応答品質チェック。内部思考の漏れ・重複を検出しブロック。フェイルセーフ=送信
+- `should_participate(new_message, recent_messages)`: 会話ウィンドウ内での三択判定 YES/SKIP/LEAVE。フェイルセーフ=skip
+- **会話ウィンドウ**: @メンション後2分間（`CONVERSATION_WINDOW_SECONDS=120`）、メンションなしで応答可能。LEAVEでウィンドウ即時終了
 
 ### エージェントループの仕組み（orchestrator.py）
 
 - **append-onlyコンテキスト**: メッセージ履歴は追加のみ、エラー履歴も保持
+- **適応的thinking mode**: `_looks_complex()` — 短文/挨拶パターンはnon-thinking、それ以外はthinking
 - **適応的max_tokens**: 通常1500 → 終盤800 → 最終ステップはツール無効化しテキスト応答を強制
-- **目標追跡**: 4ステップごとにユーザーの元のリクエストをリマインダーとして注入
-- **エラー回復**: 同一ツール2回連続失敗で回復ヒントを注入
+- **目標追跡**: 3ステップごとに反省プロンプト注入、残り3ステップ以下で緊急警告
+- **エラー回復**: 同一ツール2回連続失敗で回復ヒント注入
+- **ループ防止**: 同一ツール連続使用を検出して警告
 - **コンテキスト管理**: 80Kトークン超過で古い交換を圧縮（context_manager.py、日本語3文字≈1トークン）
 
-### 登録ツール（20個）
+### 登録ツール（22個）
 
 | Tool | 既存サービス | 機能 |
 |---|---|---|
@@ -112,6 +134,8 @@ AgentOrchestrator.execute()
 | `character` | CharacterManager | 性格変更 |
 | `send_message` / `add_reaction` | Discord API | メッセージ送信・リアクション |
 | `remember` / `recall` | MemoryManager | 長期記憶の読み書き |
+| `get_current_time` | — | 現在日時・曜日取得 |
+| `web_search` | Brave Search API | ウェブ検索（最大2回/実行） |
 
 新しいツールを追加する手順: `Tool` ABCを継承 → `main.py` で `ToolRegistry.register()` → LLMが自動認識。
 ツール定義は起動時に全ロード、動的追加・削除しない。
@@ -163,14 +187,16 @@ RedisClient未接続時はメモリ辞書にフォールバック。QuizRunner, 
 ## Key Files
 
 - `rajitan/main.py` — エントリーポイント。全サービス初期化、DeepSeek/OpenAI分岐、ツール登録
-- `rajitan/bot/client.py` — RajitanBot。メンション/メモリベースルーティング → AgentOrchestrator
-- `rajitan/agent/orchestrator.py` — エージェントループ（MAX_STEPS=15）
+- `rajitan/bot/client.py` — RajitanBot。メンション/メモリベース/会話ウィンドウルーティング → AgentOrchestrator
+- `rajitan/agent/orchestrator.py` — エージェントループ（MAX_STEPS=15、thinking mode適応切替）
+- `rajitan/agent/response_gate.py` — LLM品質ゲート（should_send）+ 会話参加判定（should_participate）
 - `rajitan/agent/prompts.py` — システムプロンプト構築（キャラ + 思考プロトコル + 記憶 + 会話）
 - `rajitan/agent/memory/manager.py` — MemoryManager（3層記憶の読み書き統合）
 - `rajitan/agent/memory/writer.py` — AgentMemoryWriter（execute後の自動書き込み、ツール→待ちアクションマッピング）
 - `rajitan/agent/memory/prompt_integrator.py` — 記憶→システムプロンプト変換
-- `rajitan/agent/tools/base.py` — Tool ABC、ToolResult、ToolRegistry
+- `rajitan/agent/tools/base.py` — Tool ABC、ToolResult、ToolRegistry（per-execution呼び出し制限付き）
 - `rajitan/agent/llm/openai_provider.py` — OpenAI互換API実装（DeepSeek/OpenAI共用）
+- `rajitan/agent/context_manager.py` — コンテキストウィンドウ管理（80Kトークン超で圧縮）
 - `rajitan/utils/config.py` — .envからの設定読み込み
 
 ## Web API (FastAPI)
@@ -188,6 +214,7 @@ RedisClient未接続時はメモリ辞書にフォールバック。QuizRunner, 
 
 必須: `DISCORD_BOT_TOKEN`
 LLM: `DEEPSEEK_API_KEY`（エージェント用）, `OPENAI_API_KEY`（レガシー機能用）
+検索: `BRAVE_SEARCH_API_KEY`（web_searchツール用、任意）
 任意: `YOUTUBE_API_KEY`, `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET`
 任意: `REDIS_HOST`/`REDIS_PORT` (なければメモリフォールバック)
 API: `API_ENABLED=true`, `API_HOST`, `API_PORT=8000`, `API_CORS_ORIGINS`
@@ -200,6 +227,7 @@ API: `API_ENABLED=true`, `API_HOST`, `API_PORT=8000`, `API_CORS_ORIGINS`
 - `EnhancedScheduleManager` が唯一のスケジューラ
 - 会話データはRedis/メモリに保存、不足時はDiscord API履歴にフォールバック
 - パーソナリティ8種: default, cheerful, calm, witty, professional, friendly, sarcastic, rajitan
+- 分類・判定タスクは必ず`thinking=False`で呼ぶ（DeepSeek thinking modeの制約）
 
 ## Deployment
 

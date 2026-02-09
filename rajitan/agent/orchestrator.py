@@ -1,7 +1,7 @@
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import discord
 
@@ -11,7 +11,12 @@ from rajitan.agent.memory.prompt_integrator import MemoryPromptIntegrator
 from rajitan.agent.memory.writer import AgentMemoryWriter
 from rajitan.agent.prompts import AgentPromptBuilder
 from rajitan.agent.tools.base import ToolRegistry, ToolResult
+from rajitan.agent.workflow.schema import WorkflowConfig
 from rajitan.utils.logger import get_logger
+
+if TYPE_CHECKING:
+    from rajitan.agent.workflow.execution_log import ExecutionLogCollector
+    from rajitan.agent.workflow.loader import WorkflowLoader
 
 logger = get_logger("agent.orchestrator")
 
@@ -40,8 +45,6 @@ class AgentResult:
 class AgentOrchestrator:
     """Thinking agent loop — understands, plans, executes, verifies, and responds"""
 
-    MAX_STEPS = 15
-
     def __init__(
         self,
         llm_provider: LLMProvider,
@@ -49,20 +52,33 @@ class AgentOrchestrator:
         character_manager,
         conversation_tracker,
         memory_manager=None,
+        workflow_loader: "WorkflowLoader" = None,
+        execution_log: "ExecutionLogCollector" = None,
     ):
         self.llm = llm_provider
         self.tools = tool_registry
         self.character_manager = character_manager
         self.conversation_tracker = conversation_tracker
         self.memory_manager = memory_manager
-        self.context_manager = ContextManager()
+        self._wf_loader = workflow_loader
+        self._exec_log = execution_log
+
+        # Context manager uses base workflow config
+        wf = self._get_base_wf()
+        self.context_manager = ContextManager(context_config=wf.context)
 
         # Memory subsystem
         memory_integrator = MemoryPromptIntegrator(memory_manager) if memory_manager else None
         self.memory_writer = AgentMemoryWriter(memory_manager) if memory_manager else None
         self.prompt_builder = AgentPromptBuilder(
-            character_manager, conversation_tracker, memory_integrator
+            character_manager, conversation_tracker, memory_integrator,
+            prompts_config=wf.prompts,
         )
+
+    def _get_base_wf(self) -> WorkflowConfig:
+        if self._wf_loader:
+            return self._wf_loader.base_config
+        return WorkflowConfig()
 
     async def execute(self, user_message: str, context: AgentContext) -> AgentResult:
         """Execute the thinking agent loop"""
@@ -73,15 +89,33 @@ class AgentOrchestrator:
         last_failed_tool: Optional[str] = None
         tool_call_history: List[str] = []
 
+        # Execution log
+        exec_id = self._exec_log.new_execution_id() if self._exec_log else ""
+
+        # Get effective workflow for this user (base + overlay)
+        if self._wf_loader:
+            wf = await self._wf_loader.get_effective_config(context.guild_id, context.user_id)
+        else:
+            wf = WorkflowConfig()
+
+        max_steps = wf.agent_loop.max_steps
+
         # Determine thinking mode based on message complexity
-        use_thinking = self._looks_complex(user_message)
+        use_thinking = self._looks_complex(user_message, wf)
         logger.info(f"Agent mode: {'thinking' if use_thinking else 'non-thinking'} for: {user_message[:40]}")
 
-        # Reset per-execution tool call counts
+        # Emit start event
+        await self._emit(
+            "start", exec_id, context,
+            content=user_message[:200], max_steps=max_steps, thinking=use_thinking,
+        )
+
+        # Reset per-execution tool call counts and apply per-user tool config
         self.tools.reset_call_counts()
+        disabled_tools = self.tools.apply_per_execution_config(wf.tools)
 
         # 1. Build system prompt (structured thinking protocol)
-        system_prompt = await self.prompt_builder.build_system_prompt(context)
+        system_prompt = await self.prompt_builder.build_system_prompt(context, prompts=wf.prompts)
 
         # 2. Build initial messages with explicit user goal
         messages: List[Dict[str, Any]] = [
@@ -89,12 +123,13 @@ class AgentOrchestrator:
             {"role": "user", "content": user_message},
         ]
 
-        # 3. Get tool definitions (loaded once, never modified)
-        tool_definitions = self.tools.get_function_definitions()
+        # 3. Get tool definitions (filtered by per-user disabled list)
+        tool_definitions = self.tools.get_function_definitions(exclude=disabled_tools)
 
         # 4. Agent loop
-        for step in range(self.MAX_STEPS):
-            logger.info(f"Agent step {step + 1}/{self.MAX_STEPS}")
+        for step in range(max_steps):
+            logger.info(f"Agent step {step + 1}/{max_steps}")
+            await self._emit("step", exec_id, context, step=step, max_steps=max_steps)
 
             # Context window management: compact if approaching limits
             if self.context_manager.should_summarize(messages):
@@ -102,42 +137,48 @@ class AgentOrchestrator:
                 messages = self.context_manager.compact_context(messages)
 
             # Step-aware context injection: budget + reflection + planning
-            if step == 0 and self._looks_complex(user_message):
+            if step == max_steps - 1:
+                # Final step: inject final_step prompt only (force text answer)
                 messages.append({
                     "role": "user",
-                    "content": (
-                        f"【ステップ 1/{self.MAX_STEPS}】"
-                        "まず計画を立ててください。何のツールを使うか、"
-                        "何ステップ必要か考えてから実行してください。"
+                    "content": wf.prompts.step_injection.final_step,
+                })
+            elif step == 0 and self._looks_complex(user_message, wf):
+                messages.append({
+                    "role": "user",
+                    "content": wf.prompts.step_injection.first_step.format(
+                        max_steps=max_steps,
                     ),
                 })
             elif step > 0:
                 step_injection = self.prompt_builder.build_step_injection(
                     step=step,
-                    max_steps=self.MAX_STEPS,
+                    max_steps=max_steps,
                     original_request=user_message,
                     tools_used=tools_used,
+                    wf=wf,
                 )
                 if step_injection:
                     messages.append({"role": "user", "content": step_injection})
 
             # Adaptive max_tokens and tool availability
             step_max_tokens, step_tools = self._get_step_params(
-                step, tool_definitions, messages
+                step, max_steps, tool_definitions, wf
             )
 
             # Call LLM
             llm_response = await self.llm.chat_completion(
                 messages=messages,
                 tools=step_tools,
-                temperature=0.7,
+                temperature=wf.agent_loop.temperature,
                 max_tokens=step_max_tokens,
                 thinking=use_thinking,
             )
 
             if llm_response is None:
+                await self._emit("error", exec_id, context, step=step, content="LLM returned None")
                 result = AgentResult(
-                    response="ごめん、うまく考えられなかった...もう一度試してみて！",
+                    response=wf.prompts.messages.get("llm_failure", ""),
                     success=False,
                     steps_taken=step + 1,
                     tools_used=tools_used,
@@ -156,6 +197,11 @@ class AgentOrchestrator:
                 logger.info(
                     f"Agent completed in {step + 1} steps, {elapsed:.1f}s, "
                     f"{total_tokens} tokens, tools: {tools_used}"
+                )
+                await self._emit(
+                    "final", exec_id, context,
+                    step=step, tokens=total_tokens,
+                    content=(llm_response.content or "")[:200],
                 )
                 result = AgentResult(
                     response=llm_response.content,
@@ -197,14 +243,24 @@ class AgentOrchestrator:
                         f"Executing tool: {tc.name} with args: {tc.arguments}"
                     )
                     tools_used.append(tc.name)
+                    await self._emit(
+                        "tool_call", exec_id, context,
+                        step=step, tool_name=tc.name, tool_args=tc.arguments,
+                    )
 
                     # Inject agent_context into tool args
                     tool_args = {**tc.arguments, "agent_context": context}
-                    result = await self.tools.execute(tc.name, **tool_args)
+                    result = await self.tools.execute(tc.name, disabled=disabled_tools, **tool_args)
+
+                    await self._emit(
+                        "tool_result", exec_id, context,
+                        step=step, tool_name=tc.name, tool_success=result.success,
+                        content=(result.to_content_string() or "")[:200],
+                    )
 
                     # Build tool result content with error recovery hints
                     content = self._build_tool_result_content(
-                        result, tc.name, last_failed_tool, consecutive_errors
+                        result, tc.name, last_failed_tool, consecutive_errors, wf
                     )
 
                     # Track consecutive errors
@@ -224,9 +280,12 @@ class AgentOrchestrator:
                         else:
                             break
                     if consecutive_same >= 2 and result.success:
-                        content += (
-                            f"\n\n【注意】{tc.name}を{consecutive_same}回連続で使用中。"
-                            "本当に繰り返す必要がありますか？目的達成なら最終回答に進んでください。"
+                        warning_tpl = wf.prompts.messages.get(
+                            "consecutive_tool_warning",
+                            "\n\n【注意】{tool_name}を{count}回連続で使用中。"
+                        )
+                        content += warning_tpl.format(
+                            tool_name=tc.name, count=consecutive_same
                         )
 
                     messages.append({
@@ -241,11 +300,12 @@ class AgentOrchestrator:
                 messages.append({"role": "assistant", "content": ""})
 
         # Max steps exceeded
-        logger.warning(f"Agent exceeded {self.MAX_STEPS} steps")
+        logger.warning(f"Agent exceeded {max_steps} steps")
+        await self._emit("error", exec_id, context, step=max_steps - 1, content="Max steps exceeded")
         result = AgentResult(
-            response="ごめん、処理が複雑すぎてうまくいかなかった。もう少しシンプルに伝えてくれると助かる！",
+            response=wf.prompts.messages.get("max_steps_exceeded", ""),
             success=False,
-            steps_taken=self.MAX_STEPS,
+            steps_taken=max_steps,
             tools_used=tools_used,
             total_tokens=total_tokens,
             goal=user_message,
@@ -257,52 +317,46 @@ class AgentOrchestrator:
     def _get_step_params(
         self,
         step: int,
+        max_steps: int,
         tool_definitions: List[Dict[str, Any]],
-        messages: List[Dict[str, Any]],
+        wf: WorkflowConfig,
     ) -> tuple:
-        """Determine max_tokens and tool availability for this step.
+        """Determine max_tokens and tool availability for this step (pure, no side effects)."""
+        sp = wf.agent_loop
 
-        - Normal steps: 1500 tokens, tools available
-        - Near-end steps: 800 tokens, tools available (encourage wrapping up)
-        - Final step: 800 tokens, no tools (force text response)
-        """
-        if step == self.MAX_STEPS - 1:
-            # Absolute last step: force final answer
-            messages.append({
-                "role": "user",
-                "content": (
-                    "【システム】これが最後のステップです。"
-                    "ツールを使わず、今までの結果をもとに最終回答してください。"
-                ),
-            })
-            return 800, None
-        elif step >= self.MAX_STEPS - 2:
-            # Near the end: encourage conclusion
-            return 800, tool_definitions if tool_definitions else None
+        if step == max_steps - 1:
+            return sp.step_params_final.max_tokens, None if not sp.step_params_final.tools_enabled else (tool_definitions or None)
+        elif step >= max_steps - 2:
+            p = sp.step_params_near_end
+            return p.max_tokens, tool_definitions if (p.tools_enabled and tool_definitions) else None
         else:
-            # Normal step: full thinking room
-            return 1500, tool_definitions if tool_definitions else None
+            p = sp.step_params_normal
+            return p.max_tokens, tool_definitions if (p.tools_enabled and tool_definitions) else None
 
-    _LIGHT_PATTERNS = [
-        # 挨拶
-        "こんにちは", "おはよう", "おやすみ", "こんばんは",
-        "やっほ", "やあ", "よお", "ちーす", "ちーっす", "おっす",
-        "ただいま", "おかえり", "ひさしぶり",
-        # 感謝・了解
-        "ありがとう", "サンキュー", "了解", "おけ", "おっけ",
-        # 軽いノリ・雑談
-        "ひま", "暇", "元気", "調子", "なにしてる",
-        "面白い", "うける", "わろた", "草",
-        "好き", "かわいい", "すごい",
-    ]
-
-    def _looks_complex(self, user_message: str) -> bool:
+    def _looks_complex(self, user_message: str, wf: WorkflowConfig = None) -> bool:
         """Heuristic: does this request likely need multi-step tool use?"""
-        if len(user_message) < 10:
+        if wf is None:
+            wf = self._get_base_wf()
+        if len(user_message) < wf.complexity.min_length:
             return False
-        if any(p in user_message for p in self._LIGHT_PATTERNS):
+        if any(p in user_message for p in wf.complexity.light_patterns):
             return False
         return True
+
+    async def _emit(self, event_type: str, exec_id: str, context: AgentContext, **kwargs) -> None:
+        """Emit an execution log event (no-op if no collector)."""
+        if not self._exec_log:
+            return
+        from rajitan.agent.workflow.execution_log import ExecutionEvent
+        event = ExecutionEvent(
+            event_type=event_type,
+            execution_id=exec_id,
+            guild_id=context.guild_id,
+            channel_id=context.channel_id,
+            user_id=context.user_id,
+            **kwargs,
+        )
+        await self._exec_log.emit(event)
 
     def _build_tool_result_content(
         self,
@@ -310,13 +364,14 @@ class AgentOrchestrator:
         tool_name: str,
         last_failed_tool: Optional[str],
         consecutive_errors: int,
+        wf: WorkflowConfig,
     ) -> str:
         """Build tool result content with verification nudges and error recovery."""
         content = result.to_content_string()
 
         # Success: verification nudge
         if result.success:
-            content += "\n（確認: この結果は期待通りか？目的達成なら最終回答へ）"
+            content += wf.prompts.messages.get("verification_nudge", "")
 
         # If same tool failed twice in a row, add a recovery hint
         if (
@@ -324,9 +379,6 @@ class AgentOrchestrator:
             and tool_name == last_failed_tool
             and consecutive_errors >= 1
         ):
-            content += (
-                "\n\n【注意】このツールは2回連続で失敗しました。"
-                "別のアプローチを試すか、ユーザーに状況を説明してください。"
-            )
+            content += wf.prompts.messages.get("double_failure_warning", "")
 
         return content

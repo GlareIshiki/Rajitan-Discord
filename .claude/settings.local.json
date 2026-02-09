@@ -10,7 +10,10 @@
       "Bash(done)",
       "Bash(find:*)",
       "Bash(grep:*)",
-      "Bash(rg:*)"
+      "Bash(rg:*)",
+      "Bash(python3 -m pytest:*)",
+      "Bash(/home/glareishiki/Rajitan-Discord/venv/bin/python -m pytest:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": []
   }

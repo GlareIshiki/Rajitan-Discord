@@ -133,7 +133,8 @@ class RajitanApplication:
             logger.info("Initializing database clients...")
             self.db_client = SQLiteClient()
             await self.db_client.initialize()
-            
+            await self.db_client.seed_preset_personas()
+
             self.redis_client = RedisClient()
             await self.redis_client.initialize()
             
@@ -207,6 +208,7 @@ class RajitanApplication:
             from rajitan.agent.tools.memory_tool import RememberTool, RecallTool
             from rajitan.agent.tools.time_tool import GetTimeTool
             from rajitan.agent.tools.web_search_tool import WebSearchTool
+            from rajitan.agent.tools.workflow_tool import WorkflowEditTool
             from rajitan.agent.memory.manager import MemoryManager
             from rajitan.agent.orchestrator import AgentOrchestrator
 
@@ -227,6 +229,12 @@ class RajitanApplication:
             # Initialize memory system
             memory_manager = MemoryManager(self.redis_client, self.db_client)
             logger.info("Memory system initialized (3-tier)")
+
+            # Load workflow definition from YAML
+            from rajitan.agent.workflow.loader import WorkflowLoader
+            workflow_loader = WorkflowLoader(db_client=self.db_client)
+            wf = workflow_loader.base_config
+            logger.info(f"Workflow loaded: {wf.name} (v{wf.version})")
 
             # Register all tools at startup (never add/remove dynamically)
             tool_registry.register(SummaryTool(self.conversation_summarizer, self.conversation_tracker))
@@ -252,9 +260,21 @@ class RajitanApplication:
             tool_registry.register(GetTimeTool())
             tool_registry.register(WebSearchTool())
 
+            # Workflow editor tool (user overlay editing via chat)
+            from rajitan.agent.workflow.editor import WorkflowEditor
+            workflow_editor = WorkflowEditor(llm_provider, workflow_loader)
+            tool_registry.register(WorkflowEditTool(workflow_editor))
+
+            # Apply workflow tool overrides (max_calls, disabled)
+            tool_registry.apply_workflow_config(wf.tools)
+
             # Response quality gate (LLM-based YES/NO check before sending)
             from rajitan.agent.response_gate import ResponseGate
-            response_gate = ResponseGate(llm_provider)
+            response_gate = ResponseGate(llm_provider, gate_config=wf.response_gate)
+
+            # Execution log collector for WebUI visualization
+            from rajitan.agent.workflow.execution_log import ExecutionLogCollector
+            execution_log = ExecutionLogCollector()
 
             agent_orchestrator = AgentOrchestrator(
                 llm_provider=llm_provider,
@@ -262,6 +282,8 @@ class RajitanApplication:
                 character_manager=self.character_manager,
                 conversation_tracker=self.conversation_tracker,
                 memory_manager=memory_manager,
+                workflow_loader=workflow_loader,
+                execution_log=execution_log,
             )
             logger.info(f"Agent system initialized with {len(tool_registry)} tools")
 
@@ -304,6 +326,8 @@ class RajitanApplication:
                 app_state["levemagi_client"] = self.levemagi_client
                 if self.google_calendar_client:
                     app_state["google_calendar_client"] = self.google_calendar_client
+                app_state["workflow_loader"] = workflow_loader
+                app_state["execution_log"] = execution_log
 
             logger.info("Rajitan application initialized successfully")
             
