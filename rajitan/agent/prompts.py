@@ -138,7 +138,14 @@ class AgentPromptBuilder:
                 convo_lines = []
                 for m in messages:
                     timestamp = m.created_at.strftime("%H:%M")
-                    content = m.content[:200] if m.content else "(添付/embed)"
+                    content = m.content[:200] if m.content else ""
+                    if m.attachments:
+                        attachment_info = " ".join(
+                            f"[添付: {a.filename} {a.url}]" for a in m.attachments
+                        )
+                        content = f"{content} {attachment_info}".strip()
+                    if not content:
+                        content = "(embed)"
                     convo_lines.append(
                         f"[{timestamp}] {m.author.display_name}: {content}"
                     )

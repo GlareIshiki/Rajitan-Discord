@@ -24,6 +24,8 @@ from rajitan.api.youtube_client import YouTubeClient
 from rajitan.api.spotify_client import SpotifyClient
 from rajitan.storage.levemagi_client import LeveMagiClient
 from rajitan.api.google_calendar_client import GoogleCalendarClient
+from rajitan.api.instagram_client import InstagramClient
+from rajitan.api.canva_client import CanvaClient
 from rajitan.web.server import create_app, app_state
 from rajitan.utils.logger import get_logger
 from rajitan.utils.config import get_config
@@ -110,6 +112,8 @@ class RajitanApplication:
         self.spotify_client: Optional[SpotifyClient] = None
         self.levemagi_client: Optional[LeveMagiClient] = None
         self.google_calendar_client: Optional[GoogleCalendarClient] = None
+        self.instagram_client: Optional[InstagramClient] = None
+        self.canva_client: Optional[CanvaClient] = None
         self.fastapi_app = None
         self.process_manager = ProcessManager()
         self.running = False
@@ -183,6 +187,15 @@ class RajitanApplication:
                 logger.info("Initializing Google Calendar client...")
                 self.google_calendar_client = GoogleCalendarClient(self.db_client.db_path)
 
+            # Initialize Instagram client
+            logger.info("Initializing Instagram client...")
+            self.instagram_client = InstagramClient(self.db_client.db_path)
+
+            # Initialize Canva client (optional)
+            if config.canva_client_id and config.canva_client_secret:
+                logger.info("Initializing Canva client...")
+                self.canva_client = CanvaClient(self.db_client.db_path)
+
             # Initialize Discord bot first
             logger.info("Initializing Discord bot...")
             self.bot = RajitanBot()
@@ -209,6 +222,9 @@ class RajitanApplication:
             from rajitan.agent.tools.time_tool import GetTimeTool
             from rajitan.agent.tools.web_search_tool import WebSearchTool
             from rajitan.agent.tools.workflow_tool import WorkflowEditTool
+            from rajitan.agent.tools.instagram_tool import (
+                InstagramPostTool, InstagramStatusTool, GenerateImageTool, CanvaDesignTool
+            )
             from rajitan.agent.memory.manager import MemoryManager
             from rajitan.agent.orchestrator import AgentOrchestrator
 
@@ -259,6 +275,14 @@ class RajitanApplication:
             tool_registry.register(RecallTool(memory_manager))
             tool_registry.register(GetTimeTool())
             tool_registry.register(WebSearchTool())
+
+            # Instagram & image generation tools
+            tool_registry.register(InstagramPostTool(self.instagram_client))
+            tool_registry.register(InstagramStatusTool(self.instagram_client))
+            if config.google_ai_api_key:
+                tool_registry.register(GenerateImageTool(config.google_ai_api_key))
+            if self.canva_client:
+                tool_registry.register(CanvaDesignTool(self.canva_client))
 
             # Workflow editor tool (user overlay editing via chat)
             from rajitan.agent.workflow.editor import WorkflowEditor
@@ -326,6 +350,10 @@ class RajitanApplication:
                 app_state["levemagi_client"] = self.levemagi_client
                 if self.google_calendar_client:
                     app_state["google_calendar_client"] = self.google_calendar_client
+                if self.instagram_client:
+                    app_state["instagram_client"] = self.instagram_client
+                if self.canva_client:
+                    app_state["canva_client"] = self.canva_client
                 app_state["workflow_loader"] = workflow_loader
                 app_state["execution_log"] = execution_log
 
@@ -390,6 +418,10 @@ class RajitanApplication:
                 await self.enhanced_schedule_manager.stop()
 
             # Close API clients
+            if self.instagram_client:
+                await self.instagram_client.close()
+            if self.canva_client:
+                await self.canva_client.close()
             if self.google_calendar_client:
                 await self.google_calendar_client.close()
 

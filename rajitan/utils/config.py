@@ -58,6 +58,17 @@ class Config:
             "https://api.glareishiki.com/api/google/callback",
         )
 
+        # Google AI (Nanobanana / Gemini) Configuration
+        self.google_ai_api_key = os.getenv("GOOGLE_AI_API_KEY")
+
+        # Canva Connect API Configuration
+        self.canva_client_id = os.getenv("CANVA_CLIENT_ID")
+        self.canva_client_secret = os.getenv("CANVA_CLIENT_SECRET")
+        self.canva_redirect_uri = os.getenv(
+            "CANVA_REDIRECT_URI",
+            "https://api.glareishiki.com/api/canva/callback",
+        )
+
         # API Server Configuration
         self.api_host = os.getenv("API_HOST", "0.0.0.0")
         self.api_port = int(os.getenv("API_PORT", "8000"))

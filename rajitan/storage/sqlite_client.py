@@ -304,6 +304,29 @@ class SQLiteClient:
                 )
             ''')
 
+            # Instagram sessions table
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS instagram_sessions (
+                    discord_id TEXT PRIMARY KEY,
+                    ig_username TEXT NOT NULL,
+                    session_data TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # Canva tokens table
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS canva_tokens (
+                    discord_id TEXT PRIMARY KEY,
+                    access_token TEXT NOT NULL,
+                    refresh_token TEXT NOT NULL,
+                    token_expiry TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
             # Bot activities table
             await db.execute('''
                 CREATE TABLE IF NOT EXISTS bot_activities (
