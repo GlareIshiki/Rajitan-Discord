@@ -70,6 +70,39 @@ async def get_persona(guild_id: str, persona_id: str, user=Depends(get_current_u
 
 
 # ======================================================================
+# Active Persona (must be before {persona_id} routes)
+# ======================================================================
+
+
+class SetActivePersonaRequest(BaseModel):
+    persona_id: str
+
+
+@router.put("/guilds/{guild_id}/personas/active")
+async def set_active_persona(
+    guild_id: str,
+    body: SetActivePersonaRequest,
+    user=Depends(get_current_user),
+):
+    """Set the active persona for a guild"""
+    character_manager = app_state.get("character_manager")
+    if not character_manager:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Character manager not available",
+        )
+
+    success = await character_manager.set_guild_persona(guild_id, body.persona_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to set active persona. Check that the persona exists.",
+        )
+
+    return {"status": "ok", "active_persona_id": body.persona_id}
+
+
+# ======================================================================
 # Create / Update / Delete
 # ======================================================================
 
@@ -181,39 +214,6 @@ async def delete_persona(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete persona",
         )
-
-
-# ======================================================================
-# Active Persona
-# ======================================================================
-
-
-class SetActivePersonaRequest(BaseModel):
-    persona_id: str
-
-
-@router.put("/guilds/{guild_id}/personas/active")
-async def set_active_persona(
-    guild_id: str,
-    body: SetActivePersonaRequest,
-    user=Depends(get_current_user),
-):
-    """Set the active persona for a guild"""
-    character_manager = app_state.get("character_manager")
-    if not character_manager:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Character manager not available",
-        )
-
-    success = await character_manager.set_guild_persona(guild_id, body.persona_id)
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Failed to set active persona. Check that the persona exists.",
-        )
-
-    return {"status": "ok", "active_persona_id": body.persona_id}
 
 
 # ======================================================================
