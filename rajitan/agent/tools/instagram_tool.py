@@ -53,17 +53,14 @@ class InstagramPostTool(Tool):
 
         connected = await self.instagram.is_connected(discord_id)
         if not connected:
-            return ToolResult(
-                success=False,
-                error="Instagramに接続されていません。ユーザーにWebUIからInstagramを連携するよう案内してください",
-            )
+            return ToolResult(success=False, error="Instagram未連携")
 
         result = await self.instagram.download_and_post(discord_id, image_url, caption)
 
         if result["success"]:
             return ToolResult(
                 success=True,
-                data=f"Instagramに投稿しました！ {result['media_url']}",
+                data={"media_id": result["media_id"], "media_url": result["media_url"]},
             )
         return ToolResult(success=False, error=result["error"])
 
@@ -97,11 +94,11 @@ class InstagramStatusTool(Tool):
             username = await self.instagram.get_ig_username(discord_id)
             return ToolResult(
                 success=True,
-                data=f"Instagram連携済み（@{username}）",
+                data={"connected": True, "username": username},
             )
         return ToolResult(
             success=True,
-            data="Instagramに接続されていません。WebUIのダッシュボードからInstagramアカウントを連携してください",
+            data={"connected": False},
         )
 
 
@@ -168,14 +165,9 @@ class GenerateImageTool(Tool):
                 f.write(image_data)
                 tmp_path = f.name
 
-            # Return a file:// URL — instagram_post will need to handle this
-            # Actually, return the path and have the agent use it directly
             return ToolResult(
                 success=True,
-                data={
-                    "image_path": tmp_path,
-                    "message": "画像を生成しました。instagram_postで投稿する場合はこのimage_pathをimage_urlとして使ってください。",
-                },
+                data={"image_path": tmp_path},
             )
 
         except Exception as e:
@@ -228,21 +220,12 @@ class CanvaDesignTool(Tool):
 
         connected = await self.canva.is_connected(discord_id)
         if not connected:
-            return ToolResult(
-                success=False,
-                error="Canvaに接続されていません。ユーザーにWebUIからCanvaを連携するよう案内してください",
-            )
+            return ToolResult(success=False, error="Canva未連携")
 
         image_url = await self.canva.create_and_export(
             discord_id, template_id, text_replacements
         )
 
         if image_url:
-            return ToolResult(
-                success=True,
-                data={
-                    "image_url": image_url,
-                    "message": "Canvaデザインを生成・エクスポートしました。instagram_postで投稿できます。",
-                },
-            )
-        return ToolResult(success=False, error="Canvaデザインの生成に失敗しました")
+            return ToolResult(success=True, data={"image_url": image_url})
+        return ToolResult(success=False, error="Canvaデザインの生成に失敗")
