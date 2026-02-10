@@ -243,7 +243,7 @@ agent_teams:
   teammate_max_tokens: 1500
   plan_max_tokens: 1200               # リーダー計画LLM呼び出しのmax_tokens
   plan_temperature: 0.3               # 低温: 正確な計画
-  synthesize_max_tokens: 2000         # 統合LLM呼び出しのmax_tokens
+  synthesize_max_tokens: 800           # 統合LLM呼び出しのmax_tokens
   synthesize_temperature: 0.7
   min_message_length: 40              # この文字数未満はチーム不使用
   max_waves: 4                        # 最大Wave深度
