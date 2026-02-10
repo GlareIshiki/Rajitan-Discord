@@ -203,8 +203,9 @@ class RajitanBot(commands.Bot):
             if self._is_conversation_active(channel_id):
                 if self.response_gate and self.agent_orchestrator:
                     recent = await self._get_recent_context(message.channel)
+                    guild_llm = await self._get_guild_llm(message)
                     decision = await self.response_gate.should_participate(
-                        message.content, recent
+                        message.content, recent, llm_override=guild_llm
                     )
                     if decision == "yes":
                         logger.info(f"Conversation window: participating in {channel_id}")
@@ -282,7 +283,8 @@ class RajitanBot(commands.Bot):
             response = result.response
             # LLM品質ゲート: 送信すべきか判定
             if self.response_gate:
-                if not await self.response_gate.should_send(response, content):
+                guild_llm = await self._get_guild_llm(message)
+                if not await self.response_gate.should_send(response, content, llm_override=guild_llm):
                     logger.info("Response blocked by quality gate")
                     return
 
@@ -328,6 +330,13 @@ class RajitanBot(commands.Bot):
     def _deactivate_conversation(self, channel_id: str):
         """ウィンドウ強制終了（@メンション必須に戻る）"""
         self._conversation_windows.pop(channel_id, None)
+
+    async def _get_guild_llm(self, message) -> "LLMProvider | None":
+        """ギルドのLLMプロバイダーを取得（ModelManager経由）"""
+        model_manager = getattr(self, "model_manager", None)
+        if model_manager and message.guild:
+            return await model_manager.get_provider(str(message.guild.id))
+        return None
 
     async def _get_recent_context(self, channel) -> str:
         """直近5件のメッセージをテキスト化（割り込み判定用）"""

@@ -56,24 +56,25 @@ class ResponseGate:
         self.llm = llm_provider
         self.cfg = gate_config or ResponseGateConfig()
 
-    async def should_send(self, response: str, user_message: str) -> bool:
+    async def should_send(self, response: str, user_message: str, llm_override: "LLMProvider" = None) -> bool:
         """応答をユーザーに送信すべきか判定する。失敗時はfailsafe_send。"""
         try:
             return await asyncio.wait_for(
-                self._judge(response, user_message),
+                self._judge(response, user_message, llm_override),
                 timeout=self.cfg.timeout_seconds,
             )
         except Exception as e:
             logger.warning(f"ResponseGate failed, defaulting to send={self.cfg.failsafe_send}: {e}")
             return self.cfg.failsafe_send
 
-    async def _judge(self, response: str, user_message: str) -> bool:
+    async def _judge(self, response: str, user_message: str, llm_override: "LLMProvider" = None) -> bool:
         gate_prompt = self.cfg.gate_prompt or _DEFAULT_GATE_PROMPT
         prompt = gate_prompt.format(
             user_message=user_message,
             response=response,
         )
-        result = await self.llm.chat_completion(
+        llm = llm_override or self.llm
+        result = await llm.chat_completion(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=self.cfg.max_tokens,
             temperature=self.cfg.temperature,
@@ -92,24 +93,25 @@ class ResponseGate:
 
     # --- 会話参加判定 ---
 
-    async def should_participate(self, new_message: str, recent_messages: str) -> str:
+    async def should_participate(self, new_message: str, recent_messages: str, llm_override: "LLMProvider" = None) -> str:
         """会話ウィンドウ内での参加判定。"yes"/"skip"/"leave" を返す。失敗時はfailsafe_participate。"""
         try:
             return await asyncio.wait_for(
-                self._judge_participation(new_message, recent_messages),
+                self._judge_participation(new_message, recent_messages, llm_override),
                 timeout=self.cfg.timeout_seconds,
             )
         except Exception as e:
             logger.warning(f"Participation check failed, defaulting to {self.cfg.failsafe_participate}: {e}")
             return self.cfg.failsafe_participate
 
-    async def _judge_participation(self, new_message: str, recent_messages: str) -> str:
+    async def _judge_participation(self, new_message: str, recent_messages: str, llm_override: "LLMProvider" = None) -> str:
         participate_prompt = self.cfg.participate_prompt or _DEFAULT_PARTICIPATE_PROMPT
         prompt = participate_prompt.format(
             recent_messages=recent_messages,
             new_message=new_message,
         )
-        result = await self.llm.chat_completion(
+        llm = llm_override or self.llm
+        result = await llm.chat_completion(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=self.cfg.max_tokens,
             temperature=self.cfg.temperature,
