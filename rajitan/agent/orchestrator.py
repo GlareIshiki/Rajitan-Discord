@@ -56,6 +56,7 @@ class AgentOrchestrator:
         execution_log: "ExecutionLogCollector" = None,
         team_coordinator=None,
         agent_teams_coordinator=None,
+        model_manager=None,
     ):
         self.llm = llm_provider
         self.tools = tool_registry
@@ -66,6 +67,7 @@ class AgentOrchestrator:
         self._exec_log = execution_log
         self.team_coordinator = team_coordinator
         self.agent_teams_coordinator = agent_teams_coordinator
+        self.model_manager = model_manager
 
         # Context manager uses base workflow config
         wf = self._get_base_wf()
@@ -104,6 +106,16 @@ class AgentOrchestrator:
 
         max_steps = wf.agent_loop.max_steps
 
+        # Resolve guild-level LLM provider
+        if self.model_manager:
+            guild_provider = await self.model_manager.get_provider(context.guild_id)
+            guild_model_config = self.model_manager.get_config(
+                await self.model_manager.get_guild_model_id(context.guild_id)
+            )
+        else:
+            guild_provider = self.llm
+            guild_model_config = None
+
         # Agent Teams mode: role-based collaboration with dependency graph
         if self.agent_teams_coordinator and wf.agent_teams.enabled:
             from rajitan.agent.teams.models import AgentTeamsResult
@@ -112,6 +124,7 @@ class AgentOrchestrator:
                 context=context,
                 wf=wf,
                 exec_id=exec_id,
+                llm_provider=guild_provider,
             )
             if teams_result.used_teams and teams_result.response:
                 logger.info("Agent Teams produced result, skipping single-agent loop")
@@ -138,6 +151,7 @@ class AgentOrchestrator:
                 context=context,
                 wf=wf,
                 exec_id=exec_id,
+                llm_provider=guild_provider,
             )
             if team_result.used_team and team_result.response:
                 logger.info("Team mode produced result, skipping single-agent loop")
@@ -156,8 +170,11 @@ class AgentOrchestrator:
                     await self.memory_writer.process_result(result, context)
                 return result
 
-        # Determine thinking mode based on message complexity
-        use_thinking = self._looks_complex(user_message, wf)
+        # Determine thinking mode based on message complexity and model capability
+        if guild_model_config and not guild_model_config.supports_thinking:
+            use_thinking = False
+        else:
+            use_thinking = self._looks_complex(user_message, wf)
         logger.info(f"Agent mode: {'thinking' if use_thinking else 'non-thinking'} for: {user_message[:40]}")
 
         # Emit start event
@@ -222,8 +239,8 @@ class AgentOrchestrator:
                 step, max_steps, tool_definitions, wf
             )
 
-            # Call LLM
-            llm_response = await self.llm.chat_completion(
+            # Call LLM (guild-specific provider)
+            llm_response = await guild_provider.chat_completion(
                 messages=messages,
                 tools=step_tools,
                 temperature=wf.agent_loop.temperature,

@@ -60,6 +60,7 @@ class TeamCoordinator:
         context: "AgentContext",
         wf: WorkflowConfig,
         exec_id: str = "",
+        llm_provider: LLMProvider = None,
     ) -> TeamResult:
         """Attempt team execution.
 
@@ -71,13 +72,14 @@ class TeamCoordinator:
         start_time = time.time()
         total_tokens = 0
 
+        effective_llm = llm_provider or self.llm
         available_tools = self.tools.list_tools()
 
         # Step 1: Decompose
         logger.info(f"Team: decomposing: {user_message[:60]}...")
         await self._emit(exec_id, context, "team_decompose_start")
 
-        decomposition = await self.planner.decompose(user_message, available_tools)
+        decomposition = await self.planner.decompose(user_message, available_tools, llm_override=effective_llm)
 
         if not decomposition.should_use_team:
             logger.info(f"Team: single-agent preferred ({decomposition.reasoning})")
@@ -97,7 +99,7 @@ class TeamCoordinator:
         )
 
         # Step 2: Run sub-agents in parallel
-        runner = SubAgentRunner(self.llm, self.tools, self.cfg)
+        runner = SubAgentRunner(effective_llm, self.tools, self.cfg)
 
         async def _run_with_timeout(sub_task):
             try:
@@ -158,6 +160,7 @@ class TeamCoordinator:
             user_message=user_message,
             sub_agent_results=results_for_synthesis,
             character_prompt=character_prompt,
+            llm_override=effective_llm,
         )
 
         if final_response is None:

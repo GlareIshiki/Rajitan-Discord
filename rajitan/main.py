@@ -212,18 +212,46 @@ class RajitanApplication:
             from rajitan.agent.memory.manager import MemoryManager
             from rajitan.agent.orchestrator import AgentOrchestrator
 
-            # Agent uses DeepSeek if configured, otherwise falls back to OpenAI
-            if config.deepseek_api_key:
-                from openai import AsyncOpenAI as _AsyncOpenAI
-                deepseek_client = _AsyncOpenAI(
-                    api_key=config.deepseek_api_key,
-                    base_url="https://api.deepseek.com",
-                )
-                llm_provider = OpenAIProvider(deepseek_client, "deepseek-chat")
-                logger.info("Agent LLM: DeepSeek v3")
+            # Multi-model management
+            from rajitan.agent.llm.model_manager import ModelManager, ModelConfig
+
+            model_manager = ModelManager(self.db_client)
+
+            # Register available models (skips if API key not set)
+            model_manager.register(ModelConfig(
+                "deepseek-chat", "DeepSeek v3",
+                "https://api.deepseek.com", "DEEPSEEK_API_KEY",
+                supports_thinking=True,
+            ))
+            model_manager.register(ModelConfig(
+                "openai/gpt-oss-20b", "Groq GPT-OSS 20B",
+                "https://api.groq.com/openai/v1", "GROQ_API_KEY",
+                supports_thinking=False,
+            ))
+            model_manager.register(ModelConfig(
+                "openai/gpt-oss-120b", "Groq GPT-OSS 120B",
+                "https://api.groq.com/openai/v1", "GROQ_API_KEY",
+                supports_thinking=False,
+            ))
+            model_manager.register(ModelConfig(
+                "gemini-2.5-flash", "Gemini 2.5 Flash",
+                "https://generativelanguage.googleapis.com/v1beta/openai/", "GOOGLE_AI_API_KEY",
+                supports_thinking=False,
+            ))
+
+            # Default provider (for ResponseGate etc.)
+            if model_manager.list_available():
+                llm_provider = model_manager.get_default()
+                default_cfg = model_manager.get_config(model_manager.get_default_model_id())
+                logger.info(f"Agent LLM default: {default_cfg.display_name}")
             else:
                 llm_provider = OpenAIProvider(self.openai_client.client, self.openai_client.model)
-                logger.info("Agent LLM: OpenAI")
+                model_manager = None
+                logger.info("Agent LLM: OpenAI (no model keys configured)")
+
+            available = model_manager.list_available() if model_manager else []
+            if available:
+                logger.info(f"Available models: {[m.display_name for m in available]}")
             tool_registry = ToolRegistry()
 
             # Initialize memory system
@@ -328,6 +356,7 @@ class RajitanApplication:
                 execution_log=execution_log,
                 team_coordinator=team_coordinator,
                 agent_teams_coordinator=agent_teams_coordinator,
+                model_manager=model_manager,
             )
             logger.info(f"Agent system initialized with {len(tool_registry)} tools")
 
@@ -347,6 +376,7 @@ class RajitanApplication:
                 agent_orchestrator=agent_orchestrator,
                 memory_manager=memory_manager,
                 response_gate=response_gate,
+                model_manager=model_manager,
             )
             
             # Setup commands

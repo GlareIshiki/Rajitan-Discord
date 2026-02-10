@@ -69,6 +69,9 @@ class Config:
             "https://api.glareishiki.com/api/canva/callback",
         )
 
+        # Groq Configuration
+        self.groq_api_key = os.getenv("GROQ_API_KEY")
+
         # HalfMaid API
         self.halfmaid_api_url = os.getenv("HALFMAID_API_URL", "http://localhost:8001")
 

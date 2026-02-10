@@ -56,6 +56,7 @@ class AgentTeamCoordinator:
         context: "AgentContext",
         wf: WorkflowConfig,
         exec_id: str = "",
+        llm_provider: LLMProvider = None,
     ) -> AgentTeamsResult:
         """Attempt Agent Teams execution.
 
@@ -69,8 +70,10 @@ class AgentTeamCoordinator:
         available_tools = self.tools.list_tools()
         tool_descriptions = self._get_tool_descriptions()
 
+        effective_llm = llm_provider or self.llm
+
         try:
-            plan = await self.leader.plan(user_message, available_tools, tool_descriptions)
+            plan = await self.leader.plan(user_message, available_tools, tool_descriptions, llm_override=effective_llm)
         except Exception as e:
             logger.error(f"Agent Teams plan failed: {e}")
             await self._emit(exec_id, context, "agent_teams_plan_skip", content=str(e))
@@ -119,6 +122,7 @@ class AgentTeamCoordinator:
 
             wave_results = await self._execute_wave(
                 wave, task_graph, mailbox, roles_map, context, exec_id,
+                llm_provider=effective_llm,
             )
             all_results.extend(wave_results)
             for wr in wave_results:
@@ -138,6 +142,7 @@ class AgentTeamCoordinator:
                 teammate_results=all_results,
                 messages=all_messages,
                 character_prompt=character_prompt,
+                llm_override=effective_llm,
             )
         except Exception as e:
             logger.error(f"Agent Teams synthesis failed: {e}")
@@ -185,6 +190,7 @@ class AgentTeamCoordinator:
         roles_map: Dict[str, TeamRole],
         context: "AgentContext",
         exec_id: str,
+        llm_provider: LLMProvider = None,
     ) -> List[TeammateResult]:
         """Execute all tasks in a wave.
 
@@ -219,7 +225,7 @@ class AgentTeamCoordinator:
 
             teammate_id = f"{role_id}_1"
             runner = TeammateRunner(
-                self.llm, self.tools, self.cfg, task_graph, mailbox,
+                llm_provider or self.llm, self.tools, self.cfg, task_graph, mailbox,
             )
 
             await self._emit(

@@ -339,6 +339,15 @@ class SQLiteClient:
                 )
             ''')
 
+            # Guild model settings table
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS guild_model_settings (
+                    guild_id TEXT PRIMARY KEY,
+                    model_id TEXT NOT NULL DEFAULT 'deepseek-chat',
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
             # User workflow overlays table
             await db.execute('''
                 CREATE TABLE IF NOT EXISTS user_workflows (
@@ -753,6 +762,41 @@ class SQLiteClient:
                 return True
         except Exception as e:
             logger.error(f"Failed to save user workflow: {e}")
+            return False
+
+    # Guild model settings operations
+    async def get_guild_model(self, guild_id: str) -> Optional[str]:
+        """Get the model_id for a guild, or None if not set"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(
+                    'SELECT model_id FROM guild_model_settings WHERE guild_id = ?',
+                    (guild_id,)
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        return row[0]
+                    return None
+        except Exception as e:
+            logger.error(f"Failed to get guild model: {e}")
+            return None
+
+    async def set_guild_model(self, guild_id: str, model_id: str) -> bool:
+        """Set the model_id for a guild"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(
+                    '''INSERT INTO guild_model_settings (guild_id, model_id, updated_at)
+                       VALUES (?, ?, CURRENT_TIMESTAMP)
+                       ON CONFLICT(guild_id)
+                       DO UPDATE SET model_id = excluded.model_id,
+                                     updated_at = CURRENT_TIMESTAMP''',
+                    (guild_id, model_id)
+                )
+                await db.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to set guild model: {e}")
             return False
 
     # Persona operations

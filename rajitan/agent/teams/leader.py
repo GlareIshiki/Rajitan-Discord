@@ -112,6 +112,7 @@ class TeamLeader:
         user_message: str,
         available_tools: List[str],
         tool_descriptions: Dict[str, str],
+        llm_override: LLMProvider = None,
     ) -> TeamPlan:
         """Create a team plan with roles, tasks, and dependencies.
 
@@ -138,7 +139,8 @@ class TeamLeader:
             user_message=user_message,
         )
 
-        result = await self.llm.chat_completion(
+        llm = llm_override or self.llm
+        result = await llm.chat_completion(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=self.cfg.plan_max_tokens,
             temperature=self.cfg.plan_temperature,
@@ -253,6 +255,7 @@ class TeamLeader:
         teammate_results: List[TeammateResult],
         messages: List[TeamMessage],
         character_prompt: str,
+        llm_override: LLMProvider = None,
     ) -> Optional[str]:
         """Synthesize all results into a final user-facing response."""
         # Build results text
@@ -283,7 +286,8 @@ class TeamLeader:
             messages_text=messages_text,
         )
 
-        result = await self.llm.chat_completion(
+        llm = llm_override or self.llm
+        result = await llm.chat_completion(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=self.cfg.synthesize_max_tokens,
             temperature=self.cfg.synthesize_temperature,

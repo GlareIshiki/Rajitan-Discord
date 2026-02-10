@@ -130,6 +130,72 @@ class PersonalityView(discord.ui.View):
         self.add_item(PersonalitySelect(bot))
 
 
+class ModelSelect(discord.ui.Select):
+    """Dropdown select for LLM model"""
+
+    def __init__(self, bot, current_model_id: str):
+        self.bot_ref = bot
+        model_manager = getattr(bot, "model_manager", None)
+        options = []
+        if model_manager:
+            for cfg in model_manager.list_available():
+                is_default = cfg.model_id == current_model_id
+                options.append(discord.SelectOption(
+                    label=cfg.display_name,
+                    description=cfg.model_id,
+                    value=cfg.model_id,
+                    default=is_default,
+                ))
+        if not options:
+            options = [discord.SelectOption(label="モデルなし", value="none")]
+        super().__init__(
+            placeholder="LLMモデルを選択...",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        selected = self.values[0]
+        if selected == "none":
+            await interaction.response.send_message("利用可能なモデルがありません。", ephemeral=True)
+            return
+
+        model_manager = getattr(self.bot_ref, "model_manager", None)
+        if not model_manager:
+            await interaction.response.send_message("モデル管理が初期化されていません。", ephemeral=True)
+            return
+
+        guild_id = str(interaction.guild.id)
+        success = await model_manager.set_guild_model(guild_id, selected)
+
+        if success:
+            cfg = model_manager.get_config(selected)
+            display = cfg.display_name if cfg else selected
+            embed = discord.Embed(
+                title="LLMモデル変更完了",
+                description=f"エージェントのLLMモデルを **{display}** に変更しました！",
+                color=discord.Color.green(),
+            )
+            if cfg:
+                thinking = "対応" if cfg.supports_thinking else "非対応"
+                embed.add_field(name="モデルID", value=cfg.model_id, inline=True)
+                embed.add_field(name="Thinking Mode", value=thinking, inline=True)
+            await interaction.response.edit_message(embed=embed, view=None)
+        else:
+            await interaction.response.send_message(
+                "モデルの変更に失敗しました。", ephemeral=True
+            )
+
+
+class ModelView(discord.ui.View):
+    """View containing the model select dropdown"""
+
+    def __init__(self, bot, current_model_id: str):
+        super().__init__(timeout=120)
+        self.add_item(ModelSelect(bot, current_model_id))
+
+
 class RajitanCommands(commands.Cog):
     """Discord slash commands for Rajitan"""
 
@@ -511,6 +577,51 @@ class RajitanCommands(commands.Cog):
             logger.error(f"Error in quiz command: {e}")
             await interaction.followup.send("クイズの開始中にエラーが発生しました。")
 
+    @app_commands.command(name="model", description="エージェントのLLMモデルを変更")
+    @app_commands.default_permissions(manage_guild=True)
+    async def model_command(self, interaction: discord.Interaction):
+        """Change the LLM model for this server"""
+        if interaction.guild is None:
+            await interaction.response.send_message(
+                "このコマンドはサーバー内でのみ使用できます。", ephemeral=True
+            )
+            return
+        try:
+            model_manager = getattr(self.bot, "model_manager", None)
+            if not model_manager:
+                await interaction.response.send_message(
+                    "モデル管理が初期化されていません。", ephemeral=True
+                )
+                return
+
+            guild_id = str(interaction.guild.id)
+            current_model_id = await model_manager.get_guild_model_id(guild_id)
+            current_cfg = model_manager.get_config(current_model_id)
+            current_name = current_cfg.display_name if current_cfg else current_model_id
+
+            embed = discord.Embed(
+                title="LLMモデル設定",
+                description=f"現在のモデル: **{current_name}**\n"
+                            f"下のメニューから新しいモデルを選択してください。",
+                color=discord.Color.blurple(),
+            )
+
+            available = model_manager.list_available()
+            model_list = "\n".join(
+                f"- **{m.display_name}** (`{m.model_id}`)"
+                for m in available
+            )
+            embed.add_field(name="利用可能なモデル", value=model_list, inline=False)
+
+            view = ModelView(self.bot, current_model_id)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+        except Exception as e:
+            logger.error(f"Error in model command: {e}")
+            await interaction.response.send_message(
+                "モデル設定中にエラーが発生しました。", ephemeral=True
+            )
+
     @app_commands.command(name="status", description="ボットのステータス表示")
     async def status_command(self, interaction: discord.Interaction):
         """Show bot status"""
@@ -567,21 +678,31 @@ class RajitanCommands(commands.Cog):
             # Agent system info
             if self.bot.agent_orchestrator:
                 orch = self.bot.agent_orchestrator
-                llm_model = orch.llm.model
-                # Detect provider from base_url
-                base_url = str(getattr(orch.llm.client, "base_url", ""))
-                if "deepseek" in base_url:
-                    provider = "DeepSeek"
-                else:
-                    provider = "OpenAI"
                 tool_count = len(orch.tools)
-                embed.add_field(
-                    name="エージェント",
-                    value=f"LLM: {provider} ({llm_model})\n"
-                          f"ツール数: {tool_count}\n"
-                          f"最大ステップ: {orch.MAX_STEPS}",
-                    inline=True,
-                )
+
+                # Show guild-specific model if ModelManager is available
+                model_manager = getattr(self.bot, "model_manager", None)
+                if model_manager:
+                    guild_id = str(interaction.guild.id)
+                    model_id = await model_manager.get_guild_model_id(guild_id)
+                    model_cfg = model_manager.get_config(model_id)
+                    model_display = model_cfg.display_name if model_cfg else model_id
+                    thinking = "対応" if (model_cfg and model_cfg.supports_thinking) else "非対応"
+                    embed.add_field(
+                        name="エージェント",
+                        value=f"LLM: {model_display}\n"
+                              f"Thinking: {thinking}\n"
+                              f"ツール数: {tool_count}",
+                        inline=True,
+                    )
+                else:
+                    llm_model = orch.llm.model
+                    embed.add_field(
+                        name="エージェント",
+                        value=f"LLM: {llm_model}\n"
+                              f"ツール数: {tool_count}",
+                        inline=True,
+                    )
 
             await interaction.followup.send(embed=embed)
 
@@ -606,6 +727,7 @@ class RajitanCommands(commands.Cog):
                 name="基本コマンド",
                 value="`/setup` - キャラクターの初期設定\n"
                       "`/personality` - パーソナリティの変更（ドロップダウン）\n"
+                      "`/model` - LLMモデルの変更（管理者のみ）\n"
                       "`/status` - ボットのステータス表示\n"
                       "`/help` - このヘルプを表示",
                 inline=False,

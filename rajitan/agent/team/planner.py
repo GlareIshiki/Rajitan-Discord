@@ -103,6 +103,7 @@ class TaskPlanner:
         self,
         user_message: str,
         available_tools: List[str],
+        llm_override: LLMProvider = None,
     ) -> DecompositionResult:
         """Decompose a user request into parallel sub-tasks."""
         if len(user_message) < self.cfg.min_message_length:
@@ -118,8 +119,9 @@ class TaskPlanner:
             user_message=user_message,
         )
 
+        llm = llm_override or self.llm
         try:
-            response = await self.llm.chat_completion(
+            response = await llm.chat_completion(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=self.cfg.decompose_temperature,
                 max_tokens=self.cfg.decompose_max_tokens,
@@ -193,6 +195,7 @@ class TaskPlanner:
         user_message: str,
         sub_agent_results: List[Dict[str, Any]],
         character_prompt: str,
+        llm_override: LLMProvider = None,
     ) -> Optional[str]:
         """Synthesize sub-agent results into a user-facing response."""
         results_text = ""
@@ -208,8 +211,9 @@ class TaskPlanner:
             sub_agent_results=results_text,
         )
 
+        llm = llm_override or self.llm
         try:
-            response = await self.llm.chat_completion(
+            response = await llm.chat_completion(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=self.cfg.synthesize_temperature,
                 max_tokens=self.cfg.synthesize_max_tokens,
