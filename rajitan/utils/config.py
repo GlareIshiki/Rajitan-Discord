@@ -72,6 +72,9 @@ class Config:
         # Groq Configuration
         self.groq_api_key = os.getenv("GROQ_API_KEY")
 
+        # Anthropic Configuration
+        self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+
         # HalfMaid API
         self.halfmaid_api_url = os.getenv("HALFMAID_API_URL", "http://localhost:8001")
 

@@ -238,6 +238,26 @@ class RajitanApplication:
                 "https://generativelanguage.googleapis.com/v1beta/openai/", "GOOGLE_AI_API_KEY",
                 supports_thinking=False,
             ))
+            model_manager.register(ModelConfig(
+                "gpt-5", "GPT-5",
+                "https://api.openai.com/v1", "OPENAI_API_KEY",
+                supports_thinking=False,
+            ))
+            model_manager.register(ModelConfig(
+                "claude-sonnet-4-5", "Claude Sonnet 4.5",
+                "https://api.anthropic.com/v1/", "ANTHROPIC_API_KEY",
+                supports_thinking=False,
+            ))
+            model_manager.register(ModelConfig(
+                "gemini-3-flash-preview", "Gemini 3 Flash",
+                "https://generativelanguage.googleapis.com/v1beta/openai/", "GOOGLE_AI_API_KEY",
+                supports_thinking=False,
+            ))
+            model_manager.register(ModelConfig(
+                "gemini-3-pro-preview", "Gemini 3 Pro",
+                "https://generativelanguage.googleapis.com/v1beta/openai/", "GOOGLE_AI_API_KEY",
+                supports_thinking=False,
+            ))
 
             # Default provider (for ResponseGate etc.)
             if model_manager.list_available():
