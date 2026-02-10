@@ -55,6 +55,7 @@ class AgentOrchestrator:
         workflow_loader: "WorkflowLoader" = None,
         execution_log: "ExecutionLogCollector" = None,
         team_coordinator=None,
+        agent_teams_coordinator=None,
     ):
         self.llm = llm_provider
         self.tools = tool_registry
@@ -64,6 +65,7 @@ class AgentOrchestrator:
         self._wf_loader = workflow_loader
         self._exec_log = execution_log
         self.team_coordinator = team_coordinator
+        self.agent_teams_coordinator = agent_teams_coordinator
 
         # Context manager uses base workflow config
         wf = self._get_base_wf()
@@ -101,6 +103,32 @@ class AgentOrchestrator:
             wf = WorkflowConfig()
 
         max_steps = wf.agent_loop.max_steps
+
+        # Agent Teams mode: role-based collaboration with dependency graph
+        if self.agent_teams_coordinator and wf.agent_teams.enabled:
+            from rajitan.agent.teams.models import AgentTeamsResult
+            teams_result = await self.agent_teams_coordinator.try_execute(
+                user_message=user_message,
+                context=context,
+                wf=wf,
+                exec_id=exec_id,
+            )
+            if teams_result.used_teams and teams_result.response:
+                logger.info("Agent Teams produced result, skipping single-agent loop")
+                all_tools = []
+                for tr in teams_result.teammate_results:
+                    all_tools.extend(tr.tools_used)
+                result = AgentResult(
+                    response=teams_result.response,
+                    success=True,
+                    steps_taken=0,
+                    tools_used=all_tools,
+                    total_tokens=teams_result.total_tokens,
+                    goal=user_message,
+                )
+                if self.memory_writer:
+                    await self.memory_writer.process_result(result, context)
+                return result
 
         # Team mode: decompose → parallel sub-agents → synthesize
         if self.team_coordinator and wf.team.enabled:

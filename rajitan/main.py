@@ -305,6 +305,19 @@ class RajitanApplication:
                 )
                 logger.info(f"Team mode enabled (max {wf.team.max_sub_agents} sub-agents)")
 
+            # Initialize Agent Teams coordinator (role-based collaboration)
+            agent_teams_coordinator = None
+            if wf.agent_teams.enabled:
+                from rajitan.agent.teams.team_coordinator import AgentTeamCoordinator
+                agent_teams_coordinator = AgentTeamCoordinator(
+                    llm_provider=llm_provider,
+                    tool_registry=tool_registry,
+                    config=wf.agent_teams,
+                    character_manager=self.character_manager,
+                    execution_log=execution_log,
+                )
+                logger.info(f"Agent Teams enabled (max {wf.agent_teams.max_teammates} teammates)")
+
             agent_orchestrator = AgentOrchestrator(
                 llm_provider=llm_provider,
                 tool_registry=tool_registry,
@@ -314,6 +327,7 @@ class RajitanApplication:
                 workflow_loader=workflow_loader,
                 execution_log=execution_log,
                 team_coordinator=team_coordinator,
+                agent_teams_coordinator=agent_teams_coordinator,
             )
             logger.info(f"Agent system initialized with {len(tool_registry)} tools")
 

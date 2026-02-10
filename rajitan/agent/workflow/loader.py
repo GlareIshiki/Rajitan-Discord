@@ -14,6 +14,7 @@ import yaml
 
 from rajitan.agent.workflow.schema import (
     AgentLoopConfig,
+    AgentTeamsConfig,
     ComplexityConfig,
     ContextConfig,
     PromptsConfig,
@@ -170,6 +171,7 @@ class WorkflowLoader:
             prompts=self._parse_prompts(raw.get("prompts", {})),
             tools=self._parse_tools(raw.get("tools", {})),
             team=self._parse_team(raw.get("team", {})),
+            agent_teams=self._parse_agent_teams(raw.get("agent_teams", {})),
         )
 
     def _parse_agent_loop(self, d: dict) -> AgentLoopConfig:
@@ -250,6 +252,24 @@ class WorkflowLoader:
             default_max_calls=d.get("defaults", {}).get("max_calls_per_execution", 5),
             overrides=overrides,
             disabled=d.get("disabled", []),
+        )
+
+    def _parse_agent_teams(self, d: dict) -> AgentTeamsConfig:
+        return AgentTeamsConfig(
+            enabled=d.get("enabled", False),
+            max_teammates=d.get("max_teammates", 4),
+            max_tasks=d.get("max_tasks", 8),
+            teammate_max_steps=d.get("teammate_max_steps", 8),
+            teammate_timeout_seconds=d.get("teammate_timeout_seconds", 90.0),
+            overall_timeout_seconds=d.get("overall_timeout_seconds", 180.0),
+            teammate_temperature=d.get("teammate_temperature", 0.7),
+            teammate_max_tokens=d.get("teammate_max_tokens", 1500),
+            plan_max_tokens=d.get("plan_max_tokens", 1200),
+            plan_temperature=d.get("plan_temperature", 0.3),
+            synthesize_max_tokens=d.get("synthesize_max_tokens", 2000),
+            synthesize_temperature=d.get("synthesize_temperature", 0.7),
+            min_message_length=d.get("min_message_length", 40),
+            max_waves=d.get("max_waves", 4),
         )
 
     def _parse_team(self, d: dict) -> TeamConfig:

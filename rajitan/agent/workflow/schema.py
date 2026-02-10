@@ -136,6 +136,25 @@ class TeamConfig:
 
 
 @dataclass
+class AgentTeamsConfig:
+    """Agent Teams: role-based collaborative multi-agent system."""
+    enabled: bool = False
+    max_teammates: int = 4
+    max_tasks: int = 8
+    teammate_max_steps: int = 8
+    teammate_timeout_seconds: float = 90.0
+    overall_timeout_seconds: float = 180.0
+    teammate_temperature: float = 0.7
+    teammate_max_tokens: int = 1500
+    plan_max_tokens: int = 1200
+    plan_temperature: float = 0.3
+    synthesize_max_tokens: int = 2000
+    synthesize_temperature: float = 0.7
+    min_message_length: int = 40
+    max_waves: int = 4
+
+
+@dataclass
 class WorkflowConfig:
     """Complete workflow configuration (base + user overlay merged)."""
     version: int = 1
@@ -148,3 +167,4 @@ class WorkflowConfig:
     prompts: PromptsConfig = field(default_factory=PromptsConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
     team: TeamConfig = field(default_factory=TeamConfig)
+    agent_teams: AgentTeamsConfig = field(default_factory=AgentTeamsConfig)
