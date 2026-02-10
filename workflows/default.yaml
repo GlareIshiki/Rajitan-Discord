@@ -233,7 +233,7 @@ team:
 # ============================================================
 
 agent_teams:
-  enabled: false                      # デフォルト無効
+  enabled: true                       # 有効化
   max_teammates: 4                    # 最大チームメイト数
   max_tasks: 8                        # 最大タスク数
   teammate_max_steps: 8               # チームメイトの最大ステップ数
