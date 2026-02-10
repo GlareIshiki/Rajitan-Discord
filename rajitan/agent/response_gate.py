@@ -82,7 +82,10 @@ class ResponseGate:
         if result is None:
             return self.cfg.failsafe_send
         answer = (result.content or "").strip().upper()
-        if "NO" in answer:
+        logger.debug(f"ResponseGate raw answer: '{answer}' for: {response[:60]}...")
+        # Exact first-word match — only block on explicit "NO"
+        first_word = answer.split()[0] if answer else ""
+        if first_word == "NO":
             logger.info(f"ResponseGate blocked: {response[:80]}...")
             return False
         return True
