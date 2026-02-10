@@ -1,0 +1,34 @@
+version: 1
+
+meta:
+  display_name: "音楽再生"
+  category: music_player
+  icon: "play-circle"
+  tags: ["music", "voice", "player"]
+
+ai:
+  name: music_play
+  description: |
+    ボイスチャンネルで音楽を再生する。曲名・アーティスト名・YouTube URL・
+    Spotify曲名を指定可能。既に再生中ならキューに追加される。
+    musicツールの推薦結果のURLをそのまま渡して再生も可能。
+    【重要】ユーザーが音楽再生を要求したら、必ずこのツールを呼び出すこと。
+    過去に失敗していても必ず再試行すること。ボイスチャンネルの参加状態は
+    このツールが自動で確認するため、事前チェックは不要。
+  parameters:
+    query:
+      type: string
+      required: true
+      description: "再生する曲（曲名、アーティスト名、YouTube URL）"
+  hints: |
+    - URLでもキーワード検索でもOK
+    - 既に再生中の場合はキューに追加される
+    - music（音楽レコメンド）ツールの結果のURLをここに渡して再生も可能
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: builtin
+  builtin: music_player_api
+  _endpoint: /api/player/play
+  _method: POST

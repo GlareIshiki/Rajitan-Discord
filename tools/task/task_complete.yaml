@@ -1,0 +1,33 @@
+version: 1
+
+meta:
+  display_name: "タスク完了"
+  category: task
+  icon: "check-square"
+  tags: ["levemagi", "task"]
+
+ai:
+  name: task_complete
+  description: |
+    LeveMagiのタスク（Leaf）を完了にする。経験値が獲得できる。
+  parameters:
+    leaf_id:
+      type: string
+      required: true
+      description: "完了するタスクのID"
+    actual_hours:
+      type: number
+      required: false
+      default: 1.0
+      description: "実際にかかった時間（時間単位）"
+  hints: |
+    - task_listでIDを確認してから完了にする
+    - 完了するとXPが獲得できる
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.task_tool
+  class: TaskCompleteTool
+  services: [levemagi_client]

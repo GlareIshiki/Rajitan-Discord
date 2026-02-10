@@ -1,0 +1,31 @@
+version: 1
+
+meta:
+  display_name: "AI画像生成"
+  category: integration
+  icon: "image"
+  tags: ["ai", "image", "gemini"]
+
+ai:
+  name: generate_image
+  description: |
+    Nanobanana（Google Gemini）でAI画像を生成する。
+    プロンプトから画像を作成し、画像URLを返す。
+    Instagram投稿用の画像作成、イラスト生成などに使う。
+  parameters:
+    prompt:
+      type: string
+      required: true
+      description: "生成する画像の説明（英語推奨、具体的に書くほど良い結果が出る）"
+  hints: |
+    - 英語プロンプト推奨
+    - 生成された画像パスはinstagram_postのimage_urlに使える
+    - 1回の実行で最大2回まで
+
+execution:
+  max_calls_per_execution: 2
+  requires_context: false
+  handler: python_class
+  module: rajitan.agent.tools.instagram_tool
+  class: GenerateImageTool
+  services: [google_ai_api_key]

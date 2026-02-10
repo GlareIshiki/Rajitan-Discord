@@ -1,0 +1,24 @@
+version: 1
+
+meta:
+  display_name: "音楽レコメンド"
+  category: media
+  icon: "music"
+  tags: ["music", "recommendation"]
+
+ai:
+  name: music
+  description: |
+    会話の雰囲気に合った音楽をおすすめする。ムード分析に基づいて曲を提案し、
+    YouTubeやSpotifyのリンクを提供する。
+  parameters: {}
+  hints: |
+    パラメータ不要。会話のムードを自動分析して曲を提案する。
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.music_tool
+  class: MusicTool
+  services: [music_recommender, conversation_tracker]

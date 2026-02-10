@@ -1,0 +1,27 @@
+version: 1
+
+meta:
+  display_name: "Web検索"
+  category: utility
+  icon: "search"
+  tags: ["search", "web", "news"]
+
+ai:
+  name: web_search
+  description: |
+    Brave Searchでウェブを検索する。最新情報、ニュース、知識の確認に使う。
+  parameters:
+    query:
+      type: string
+      required: true
+      description: "検索クエリ"
+  hints: |
+    - 1回の実行で最大2回まで使用可能
+    - 具体的なクエリを指定すること（曖昧なクエリは結果が悪い）
+    - 日本語・英語どちらでも検索可能
+
+execution:
+  max_calls_per_execution: 2
+  requires_context: false
+  handler: builtin
+  builtin: web_search

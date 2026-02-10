@@ -1,0 +1,29 @@
+version: 1
+
+meta:
+  display_name: "一時停止/再開"
+  category: music_player
+  icon: "pause-circle"
+  tags: ["music", "voice", "player"]
+
+ai:
+  name: music_pause
+  description: |
+    音楽の一時停止と再開を行う。
+  parameters:
+    action:
+      type: string
+      required: true
+      enum: [pause, resume]
+      description: "pause で一時停止、resume で再開"
+  hints: |
+    - ユーザーが「止めて」と言ったら pause
+    - 「続けて」「再開して」と言ったら resume
+
+execution:
+  max_calls_per_execution: 3
+  requires_context: true
+  handler: builtin
+  builtin: music_player_api
+  _endpoint: /api/player/pause
+  _method: POST

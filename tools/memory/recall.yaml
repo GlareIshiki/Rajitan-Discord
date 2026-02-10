@@ -1,0 +1,29 @@
+version: 1
+
+meta:
+  display_name: "記憶検索"
+  category: memory
+  icon: "book-open"
+  tags: ["memory", "long-term"]
+
+ai:
+  name: recall
+  description: |
+    長期記憶から情報を思い出す。ユーザーやチャンネルについて覚えていることを検索する。
+  parameters:
+    category:
+      type: string
+      required: false
+      enum: [user_preference, channel_trait, learned_fact]
+      description: "検索するカテゴリ（省略可、全カテゴリから検索）"
+  hints: |
+    - カテゴリを省略すると全カテゴリから検索
+    - 最大10件返す
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.memory_tool
+  class: RecallTool
+  services: [memory_manager]

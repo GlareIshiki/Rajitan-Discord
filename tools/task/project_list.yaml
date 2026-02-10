@@ -1,0 +1,23 @@
+version: 1
+
+meta:
+  display_name: "プロジェクト一覧"
+  category: task
+  icon: "folder"
+  tags: ["levemagi", "project"]
+
+ai:
+  name: project_list
+  description: |
+    ユーザーのプロジェクト（Nuts）一覧を表示する。
+  parameters: {}
+  hints: |
+    パラメータ不要。現在のユーザーのプロジェクトが一覧表示される。
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.task_tool
+  class: ProjectListTool
+  services: [levemagi_client]

@@ -1,0 +1,34 @@
+version: 1
+
+meta:
+  display_name: "会話検索"
+  category: conversation
+  icon: "search"
+  tags: ["conversation", "search"]
+
+ai:
+  name: search_conversation
+  description: |
+    キーワードでチャンネルの過去の会話を検索する。特定の話題や単語が出てきた会話を探したい時に使う。
+    直近1000件の中から検索する。
+  parameters:
+    keyword:
+      type: string
+      required: true
+      description: "検索キーワード"
+    limit:
+      type: integer
+      required: false
+      default: 200
+      description: "検索対象のメッセージ件数（デフォルト: 200、最大: 1000）"
+  hints: |
+    - 大文字小文字を区別しない
+    - 最大30件までのマッチを返す
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.conversation_tool
+  class: SearchConversationTool
+  services: []

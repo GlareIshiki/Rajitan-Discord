@@ -1,0 +1,24 @@
+version: 1
+
+meta:
+  display_name: "音楽停止"
+  category: music_player
+  icon: "stop-circle"
+  tags: ["music", "voice", "player"]
+
+ai:
+  name: music_stop
+  description: |
+    音楽の再生を停止し、ボイスチャンネルから退出する。
+    キューもクリアされる。
+  parameters: {}
+  hints: |
+    - 再生中でなくても使用可能（エラーにはならない）
+
+execution:
+  max_calls_per_execution: 1
+  requires_context: true
+  handler: builtin
+  builtin: music_player_api
+  _endpoint: /api/player/stop
+  _method: POST

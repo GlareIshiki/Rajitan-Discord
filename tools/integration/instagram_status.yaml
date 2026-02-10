@@ -1,0 +1,24 @@
+version: 1
+
+meta:
+  display_name: "Instagram連携確認"
+  category: integration
+  icon: "link"
+  tags: ["instagram", "status"]
+
+ai:
+  name: instagram_status
+  description: |
+    ユーザーのInstagram連携状態を確認する。
+    未連携の場合、WebUI https://rajitan.glareishiki.com から連携できることを案内する。
+  parameters: {}
+  hints: |
+    パラメータ不要。instagram_postの前に確認する。
+
+execution:
+  max_calls_per_execution: 2
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.instagram_tool
+  class: InstagramStatusTool
+  services: [instagram_client]

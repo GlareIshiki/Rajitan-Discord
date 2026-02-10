@@ -1,0 +1,23 @@
+version: 1
+
+meta:
+  display_name: "スケジュール一覧"
+  category: schedule
+  icon: "calendar"
+  tags: ["automation", "time"]
+
+ai:
+  name: schedule_list
+  description: |
+    現在のチャンネルに設定されているスケジュール一覧を表示する。
+  parameters: {}
+  hints: |
+    パラメータ不要。現在のチャンネルのスケジュールが一覧表示される。
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.schedule_tool
+  class: ScheduleListTool
+  services: [schedule_manager]

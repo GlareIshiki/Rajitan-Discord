@@ -1,0 +1,38 @@
+version: 1
+
+meta:
+  display_name: "記憶保存"
+  category: memory
+  icon: "save"
+  tags: ["memory", "long-term"]
+
+ai:
+  name: remember
+  description: |
+    重要な情報を長期記憶に保存する。ユーザーの好みや特徴など、後で役立つ情報を覚えておく。
+    同じキーで再度呼ぶと上書きされる。
+  parameters:
+    category:
+      type: string
+      required: true
+      enum: [user_preference, channel_trait, learned_fact]
+      description: "記憶のカテゴリ（user_preference: ユーザーの好み, channel_trait: チャンネルの特徴, learned_fact: 学んだ事実）"
+    key:
+      type: string
+      required: true
+      description: "記憶のキー（例: 'favorite_game', 'active_hours'）"
+    value:
+      type: string
+      required: true
+      description: "覚えておく内容（自然言語）"
+  hints: |
+    - 3つのパラメータ全て必須
+    - キーは英語のスネークケースで
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.memory_tool
+  class: RememberTool
+  services: [memory_manager]

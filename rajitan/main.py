@@ -209,22 +209,6 @@ class RajitanApplication:
             logger.info("Initializing agent system...")
             from rajitan.agent.llm.openai_provider import OpenAIProvider
             from rajitan.agent.tools.base import ToolRegistry
-            from rajitan.agent.tools.summary_tool import SummaryTool
-            from rajitan.agent.tools.quiz_tool import QuizTool
-            from rajitan.agent.tools.music_tool import MusicTool
-            from rajitan.agent.tools.schedule_tool import ScheduleCreateTool, ScheduleListTool, ScheduleDeleteTool
-            from rajitan.agent.tools.task_tool import TaskAddTool, TaskCompleteTool, TaskListTool, ProjectListTool
-            from rajitan.agent.tools.conversation_tool import GetConversationTool, SearchConversationTool, GetUserMessagesTool, AnalyzeMoodTool
-            from rajitan.agent.tools.character_tool import CharacterTool
-            from rajitan.agent.tools.discord_tool import SendMessageTool, AddReactionTool
-            from rajitan.agent.tools.quiz_answer_tool import QuizAnswerTool
-            from rajitan.agent.tools.memory_tool import RememberTool, RecallTool
-            from rajitan.agent.tools.time_tool import GetTimeTool
-            from rajitan.agent.tools.web_search_tool import WebSearchTool
-            from rajitan.agent.tools.workflow_tool import WorkflowEditTool
-            from rajitan.agent.tools.instagram_tool import (
-                InstagramPostTool, InstagramStatusTool, GenerateImageTool, CanvaDesignTool
-            )
             from rajitan.agent.memory.manager import MemoryManager
             from rajitan.agent.orchestrator import AgentOrchestrator
 
@@ -252,42 +236,50 @@ class RajitanApplication:
             wf = workflow_loader.base_config
             logger.info(f"Workflow loaded: {wf.name} (v{wf.version})")
 
-            # Register all tools at startup (never add/remove dynamically)
-            tool_registry.register(SummaryTool(self.conversation_summarizer, self.conversation_tracker))
-            tool_registry.register(QuizTool(self.quiz_generator, self.quiz_runner, self.conversation_tracker))
-            tool_registry.register(MusicTool(self.music_recommender, self.conversation_tracker))
-            tool_registry.register(ScheduleCreateTool(self.enhanced_schedule_manager))
-            tool_registry.register(ScheduleListTool(self.enhanced_schedule_manager))
-            tool_registry.register(ScheduleDeleteTool(self.enhanced_schedule_manager))
-            tool_registry.register(TaskAddTool(self.levemagi_client))
-            tool_registry.register(TaskCompleteTool(self.levemagi_client))
-            tool_registry.register(TaskListTool(self.levemagi_client))
-            tool_registry.register(ProjectListTool(self.levemagi_client))
-            tool_registry.register(GetConversationTool(self.conversation_tracker))
-            tool_registry.register(SearchConversationTool())
-            tool_registry.register(GetUserMessagesTool())
-            tool_registry.register(AnalyzeMoodTool(self.conversation_tracker, self.conversation_analyzer))
-            tool_registry.register(CharacterTool(self.character_manager))
-            tool_registry.register(SendMessageTool())
-            tool_registry.register(AddReactionTool())
-            tool_registry.register(QuizAnswerTool(self.quiz_runner, memory_manager))
-            tool_registry.register(RememberTool(memory_manager))
-            tool_registry.register(RecallTool(memory_manager))
-            tool_registry.register(GetTimeTool())
-            tool_registry.register(WebSearchTool())
+            # --- YAML-driven tool system ---
+            from rajitan.agent.tools.service_registry import ServiceRegistry
+            from rajitan.agent.tools.definition import ToolDefinitionLoader
+            from rajitan.agent.tools.executor import GenericExecutor
 
-            # Instagram & image generation tools
-            tool_registry.register(InstagramPostTool(self.instagram_client))
-            tool_registry.register(InstagramStatusTool(self.instagram_client))
-            if config.google_ai_api_key:
-                tool_registry.register(GenerateImageTool(config.google_ai_api_key))
+            service_registry = ServiceRegistry()
+            service_registry.register("conversation_summarizer", self.conversation_summarizer)
+            service_registry.register("conversation_tracker", self.conversation_tracker)
+            service_registry.register("conversation_analyzer", self.conversation_analyzer)
+            service_registry.register("quiz_generator", self.quiz_generator)
+            service_registry.register("quiz_runner", self.quiz_runner)
+            service_registry.register("schedule_manager", self.enhanced_schedule_manager)
+            service_registry.register("levemagi_client", self.levemagi_client)
+            service_registry.register("character_manager", self.character_manager)
+            service_registry.register("memory_manager", memory_manager)
+            service_registry.register("music_recommender", self.music_recommender)
+            service_registry.register("instagram_client", self.instagram_client)
             if self.canva_client:
-                tool_registry.register(CanvaDesignTool(self.canva_client))
-
-            # Workflow editor tool (user overlay editing via chat)
+                service_registry.register("canva_client", self.canva_client)
+            if config.google_ai_api_key:
+                service_registry.register("google_ai_api_key", config.google_ai_api_key)
             from rajitan.agent.workflow.editor import WorkflowEditor
             workflow_editor = WorkflowEditor(llm_provider, workflow_loader)
-            tool_registry.register(WorkflowEditTool(workflow_editor))
+            service_registry.register("workflow_editor", workflow_editor)
+
+            executor = GenericExecutor(service_registry)
+            tool_registry.set_executor(executor)
+
+            # Load all tool definitions from YAML (tools/ directory)
+            tool_def_loader = ToolDefinitionLoader()
+            yaml_tool_defs = tool_def_loader.load_all()
+
+            # Skip tools whose required services are not available
+            for tool_def in yaml_tool_defs.values():
+                services_needed = tool_def.execution_config.get("services", [])
+                missing = [s for s in services_needed if not service_registry.has(s)]
+                if missing:
+                    logger.warning(
+                        f"Skipping tool '{tool_def.name}': missing services {missing}"
+                    )
+                    continue
+                tool_registry.register_yaml(tool_def)
+
+            logger.info(f"All tools registered via YAML ({len(tool_registry)} total)")
 
             # Apply workflow tool overrides (max_calls, disabled)
             tool_registry.apply_workflow_config(wf.tools)
@@ -356,6 +348,7 @@ class RajitanApplication:
                     app_state["canva_client"] = self.canva_client
                 app_state["workflow_loader"] = workflow_loader
                 app_state["execution_log"] = execution_log
+                app_state["tool_registry"] = tool_registry
 
             logger.info("Rajitan application initialized successfully")
             

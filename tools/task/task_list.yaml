@@ -1,0 +1,23 @@
+version: 1
+
+meta:
+  display_name: "タスク一覧"
+  category: task
+  icon: "list"
+  tags: ["levemagi", "task"]
+
+ai:
+  name: task_list
+  description: |
+    ユーザーのタスク（Leaf）一覧を表示する。未完了タスクのリストが見られる。
+  parameters: {}
+  hints: |
+    パラメータ不要。現在のユーザーの未完了タスクが一覧表示される。
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.task_tool
+  class: TaskListTool
+  services: [levemagi_client]

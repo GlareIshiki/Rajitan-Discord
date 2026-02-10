@@ -1,0 +1,38 @@
+version: 1
+
+meta:
+  display_name: "タスク追加"
+  category: task
+  icon: "plus-circle"
+  tags: ["levemagi", "task"]
+
+ai:
+  name: task_add
+  description: |
+    LeveMagiにタスク（Leaf）を追加する。タスクのタイトルと優先度を指定できる。
+  parameters:
+    title:
+      type: string
+      required: true
+      description: "タスクのタイトル"
+    priority:
+      type: string
+      required: false
+      enum: [high, medium, low]
+      default: medium
+      description: "優先度"
+    nuts_id:
+      type: string
+      required: false
+      description: "紐付けるプロジェクト（Nuts）のID（任意）"
+  hints: |
+    - タイトルは必須
+    - 優先度を省略するとmediumになる
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.task_tool
+  class: TaskAddTool
+  services: [levemagi_client]

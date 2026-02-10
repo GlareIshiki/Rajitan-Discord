@@ -69,6 +69,9 @@ class Config:
             "https://api.glareishiki.com/api/canva/callback",
         )
 
+        # HalfMaid API
+        self.halfmaid_api_url = os.getenv("HALFMAID_API_URL", "http://localhost:8001")
+
         # API Server Configuration
         self.api_host = os.getenv("API_HOST", "0.0.0.0")
         self.api_port = int(os.getenv("API_PORT", "8000"))

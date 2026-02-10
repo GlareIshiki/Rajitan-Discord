@@ -75,6 +75,7 @@ def create_app() -> FastAPI:
     from rajitan.web.routes.personas import router as personas_router
     from rajitan.web.routes.instagram_auth import router as instagram_router
     from rajitan.web.routes.canva_auth import router as canva_router
+    from rajitan.web.routes.tools import router as tools_router
     app.include_router(levemagi_router, prefix="/api/levemagi")
     app.include_router(calendar_router, prefix="/api/calendar")
     app.include_router(bot_router, prefix="/api/bot")
@@ -83,5 +84,6 @@ def create_app() -> FastAPI:
     app.include_router(personas_router, prefix="/api/bot")
     app.include_router(instagram_router, prefix="/api/instagram")
     app.include_router(canva_router, prefix="/api/canva")
+    app.include_router(tools_router, prefix="/api/tools")
 
     return app

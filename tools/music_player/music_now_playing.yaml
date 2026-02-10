@@ -1,0 +1,23 @@
+version: 1
+
+meta:
+  display_name: "再生中の曲"
+  category: music_player
+  icon: "music"
+  tags: ["music", "voice", "status"]
+
+ai:
+  name: music_now_playing
+  description: |
+    現在再生中の曲の情報を取得する。曲名、アーティスト、経過時間を確認できる。
+  parameters: {}
+  hints: |
+    - 再生中でない場合はその旨を返す
+
+execution:
+  max_calls_per_execution: 3
+  requires_context: true
+  handler: builtin
+  builtin: music_player_api
+  _endpoint: /api/status/{guild_id}
+  _method: GET

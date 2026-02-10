@@ -1,0 +1,33 @@
+version: 1
+
+meta:
+  display_name: "ユーザー発言取得"
+  category: conversation
+  icon: "user"
+  tags: ["conversation", "user"]
+
+ai:
+  name: get_user_messages
+  description: |
+    特定のユーザーのメッセージだけを取得する。誰が何を言っていたか確認したい時に使う。
+  parameters:
+    username:
+      type: string
+      required: true
+      description: "取得したいユーザーの表示名（部分一致）"
+    limit:
+      type: integer
+      required: false
+      default: 200
+      description: "検索対象のメッセージ件数（デフォルト: 200、最大: 1000）"
+  hints: |
+    - ユーザー名は部分一致で検索される
+    - 最大30件までのマッチを返す
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.conversation_tool
+  class: GetUserMessagesTool
+  services: []

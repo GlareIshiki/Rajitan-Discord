@@ -1,0 +1,22 @@
+version: 1
+
+meta:
+  display_name: "スキップ"
+  category: music_player
+  icon: "skip-forward"
+  tags: ["music", "voice", "player"]
+
+ai:
+  name: music_skip
+  description: |
+    現在再生中の曲をスキップして、キューの次の曲を再生する。
+    キューが空の場合は再生が停止する。
+  parameters: {}
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: builtin
+  builtin: music_player_api
+  _endpoint: /api/player/skip
+  _method: POST

@@ -1,0 +1,34 @@
+version: 1
+
+meta:
+  display_name: "Instagram投稿"
+  category: integration
+  icon: "instagram"
+  tags: ["instagram", "social", "image"]
+
+ai:
+  name: instagram_post
+  description: |
+    ユーザーのInstagramに画像を投稿する。画像URLとキャプションを指定する。
+    ユーザーがDiscordに添付した画像URL、generate_imageの結果のimage_path、
+    CanvaエクスポートURLなどを使える。事前にinstagram_statusでユーザーの連携状態を確認すること。
+  parameters:
+    image_url:
+      type: string
+      required: true
+      description: "投稿する画像のURL（Discord添付URL、AI生成URL、CanvaエクスポートURLなど）"
+    caption:
+      type: string
+      required: true
+      description: "投稿のキャプション（自然な文章、ハッシュタグ含めてよい）"
+  hints: |
+    - 事前にinstagram_statusで連携確認すること
+    - 1回の実行で最大2回まで
+
+execution:
+  max_calls_per_execution: 2
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.instagram_tool
+  class: InstagramPostTool
+  services: [instagram_client]

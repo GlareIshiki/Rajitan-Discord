@@ -1,0 +1,28 @@
+version: 1
+
+meta:
+  display_name: "メッセージ送信"
+  category: discord
+  icon: "message-square"
+  tags: ["discord", "message"]
+
+ai:
+  name: send_message
+  description: |
+    現在のチャンネルに追加のメッセージを送信する。
+    長い応答を分割して送りたい場合や、途中経過を報告する場合に使う。
+  parameters:
+    content:
+      type: string
+      required: true
+      description: "送信するメッセージの内容"
+  hints: |
+    - 1回の実行で最大3回まで使用可能
+    - 最終応答とは別に追加でメッセージを送りたい場合に使う
+    - 空のメッセージは送信不可
+
+execution:
+  max_calls_per_execution: 3
+  requires_context: true
+  handler: discord_action
+  action: send_message

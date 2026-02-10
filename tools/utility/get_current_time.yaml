@@ -1,0 +1,21 @@
+version: 1
+
+meta:
+  display_name: "現在時刻"
+  category: utility
+  icon: "clock"
+  tags: ["time", "date"]
+
+ai:
+  name: get_current_time
+  description: |
+    現在の日時を取得する。今日の日付、現在時刻、曜日がわかる。
+  parameters: {}
+  hints: |
+    パラメータ不要。呼ぶだけで現在日時が返る。
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: false
+  handler: builtin
+  builtin: get_current_time

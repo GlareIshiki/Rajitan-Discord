@@ -1,0 +1,30 @@
+version: 1
+
+meta:
+  display_name: "クイズ出題"
+  category: quiz
+  icon: "help-circle"
+  tags: ["quiz", "game"]
+
+ai:
+  name: quiz
+  description: |
+    最近の会話内容からクイズを生成して出題する。会話の内容を楽しくおさらいできる。
+  parameters:
+    num_questions:
+      type: integer
+      required: false
+      default: 3
+      description: "出題する問題数（デフォルト: 3、最大: 5）"
+  hints: |
+    - ユーザーが明確に頼んだときだけ使用する
+    - 1回の実行で1回のみ使用可能
+    - 出題後、quiz_answerで回答を処理する
+
+execution:
+  max_calls_per_execution: 1
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.quiz_tool
+  class: QuizTool
+  services: [quiz_generator, quiz_runner, conversation_tracker]

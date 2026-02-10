@@ -1,0 +1,30 @@
+version: 1
+
+meta:
+  display_name: "クイズ回答"
+  category: quiz
+  icon: "check-circle"
+  tags: ["quiz", "answer"]
+
+ai:
+  name: quiz_answer
+  description: |
+    クイズの回答を処理する。ユーザーが送ったA〜D回答を受け取り、正解判定と採点を行う。
+    ワーキングメモリにクイズ回答待ちがある場合に使う。
+  parameters:
+    answers:
+      type: array
+      required: true
+      description: "ユーザーの回答リスト（Q1から順番に、例: [\"A\", \"C\", \"B\"]）"
+  hints: |
+    - クイズ出題後にユーザーが回答したときに使う
+    - 回答はA/B/C/Dのいずれか
+    - 全問の回答をリストで渡す
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.quiz_answer_tool
+  class: QuizAnswerTool
+  services: [quiz_runner, memory_manager]

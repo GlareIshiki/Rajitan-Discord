@@ -1,0 +1,26 @@
+version: 1
+
+meta:
+  display_name: "リアクション追加"
+  category: discord
+  icon: "smile-plus"
+  tags: ["discord", "reaction", "emoji"]
+
+ai:
+  name: add_reaction
+  description: |
+    ユーザーのメッセージにリアクション（絵文字）を追加する。
+  parameters:
+    emoji:
+      type: string
+      required: true
+      description: "追加するリアクションの絵文字（例: 👍, ✅, 🎵）"
+  hints: |
+    - 1回の実行で最大3回まで使用可能
+    - Unicode絵文字またはDiscordカスタム絵文字が使える
+
+execution:
+  max_calls_per_execution: 3
+  requires_context: true
+  handler: discord_action
+  action: add_reaction

@@ -1,0 +1,30 @@
+version: 1
+
+meta:
+  display_name: "性格変更"
+  category: character
+  icon: "smile"
+  tags: ["character", "personality"]
+
+ai:
+  name: change_personality
+  description: |
+    Botのパーソナリティ（性格）を変更する。
+    プリセット名（default, rajitan, cheerful, calm, witty, professional, friendly, sarcastic）
+    またはカスタムペルソナのIDを指定できる。
+  parameters:
+    persona_name_or_id:
+      type: string
+      required: true
+      description: "プリセット名（default, cheerful等）またはカスタムペルソナID"
+  hints: |
+    - プリセット: default, rajitan, cheerful, calm, witty, professional, friendly, sarcastic
+    - カスタムペルソナはWebUIで作成可能
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.character_tool
+  class: CharacterTool
+  services: [character_manager]

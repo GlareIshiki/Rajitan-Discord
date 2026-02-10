@@ -139,6 +139,9 @@ class AgentPromptBuilder:
                 for m in messages:
                     timestamp = m.created_at.strftime("%H:%M")
                     content = m.content[:200] if m.content else ""
+                    # Truncate bot's own messages to reduce influence from past failures
+                    if m.author.bot and len(content) > 80:
+                        content = content[:80] + "…"
                     if m.attachments:
                         attachment_info = " ".join(
                             f"[添付: {a.filename} {a.url}]" for a in m.attachments
@@ -150,7 +153,11 @@ class AgentPromptBuilder:
                         f"[{timestamp}] {m.author.display_name}: {content}"
                     )
                 if convo_lines:
-                    return "## 最近の会話（直近15件）\n" + "\n".join(convo_lines)
+                    header = (
+                        "## 最近の会話（直近15件）\n"
+                        "※過去の会話履歴です。以前ツールが失敗していても、新しいリクエストでは必ず再試行してください。\n"
+                    )
+                    return header + "\n".join(convo_lines)
         except Exception as e:
             logger.warning(f"Failed to fetch Discord history: {e}")
         return ""

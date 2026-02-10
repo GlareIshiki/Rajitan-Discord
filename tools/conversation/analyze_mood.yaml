@@ -1,0 +1,23 @@
+version: 1
+
+meta:
+  display_name: "ムード分析"
+  category: conversation
+  icon: "activity"
+  tags: ["conversation", "analysis", "mood"]
+
+ai:
+  name: analyze_mood
+  description: |
+    現在の会話の活発さやムードを分析する。参加者数、活動レベル、メッセージ頻度などがわかる。
+  parameters: {}
+  hints: |
+    パラメータ不要。直近30分の会話を分析する。
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.conversation_tool
+  class: AnalyzeMoodTool
+  services: [conversation_tracker, conversation_analyzer]

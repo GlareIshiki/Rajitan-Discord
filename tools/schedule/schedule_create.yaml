@@ -1,0 +1,49 @@
+version: 1
+
+meta:
+  display_name: "スケジュール作成"
+  category: schedule
+  icon: "calendar-plus"
+  tags: ["automation", "time"]
+
+ai:
+  name: schedule_create
+  description: |
+    定期的または一回限りのスケジュールを作成する。
+    要約・クイズ・音楽レコメンドを指定した時間に自動実行できる。
+  parameters:
+    function_type:
+      type: string
+      required: true
+      enum: [summary, quiz, music]
+      description: "実行する機能の種類"
+    pattern_type:
+      type: string
+      required: true
+      enum: [hourly, daily, weekly, monthly, once]
+      description: "スケジュールのパターン"
+    hour:
+      type: integer
+      required: true
+      description: "実行する時間（0-23）"
+    minute:
+      type: integer
+      required: false
+      default: 0
+      description: "実行する分（0-59、デフォルト: 0）"
+    day_of_week:
+      type: integer
+      required: false
+      description: "曜日（0=月曜〜6=日曜、weeklyの場合に使用）"
+  hints: |
+    - hourlyの場合、minuteのみ指定（hourは無視される）
+    - weeklyの場合、day_of_weekを必ず指定する
+    - onceの場合、次に来るhour:minuteに1回だけ実行
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.schedule_tool
+  class: ScheduleCreateTool
+  services: [schedule_manager]

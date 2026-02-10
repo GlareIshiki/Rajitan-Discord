@@ -1,0 +1,28 @@
+version: 1
+
+meta:
+  display_name: "音量調整"
+  category: music_player
+  icon: "volume-2"
+  tags: ["music", "voice", "volume"]
+
+ai:
+  name: music_volume
+  description: |
+    音楽の音量を調整する。0から100の値で指定する。
+  parameters:
+    volume:
+      type: integer
+      required: true
+      description: "音量（0-100）"
+  hints: |
+    - デフォルト音量は50
+    - 0で消音、100で最大
+
+execution:
+  max_calls_per_execution: 3
+  requires_context: true
+  handler: builtin
+  builtin: music_player_api
+  _endpoint: /api/player/volume
+  _method: POST

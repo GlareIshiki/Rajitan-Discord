@@ -1,0 +1,30 @@
+version: 1
+
+meta:
+  display_name: "ワークフロー編集"
+  category: workflow
+  icon: "settings"
+  tags: ["workflow", "config"]
+
+ai:
+  name: edit_workflow
+  description: |
+    自分のエージェントワークフローを自然言語で編集する。
+    プロンプトの変更やツールの有効/無効設定が可能。
+    例: 「もっとフレンドリーに話して」「web_searchを無効にして」
+  parameters:
+    instruction:
+      type: string
+      required: true
+      description: "ワークフローの変更指示（自然言語）"
+  hints: |
+    - プロンプトの変更、ツールの有効/無効が設定可能
+    - 1回の実行で最大2回まで
+
+execution:
+  max_calls_per_execution: 2
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.workflow_tool
+  class: WorkflowEditTool
+  services: [workflow_editor]

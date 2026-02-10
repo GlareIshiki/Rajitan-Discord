@@ -1,0 +1,27 @@
+version: 1
+
+meta:
+  display_name: "スケジュール削除"
+  category: schedule
+  icon: "calendar-x"
+  tags: ["automation", "time"]
+
+ai:
+  name: schedule_delete
+  description: |
+    指定したスケジュールを削除する。schedule_listで取得したIDを使う。
+  parameters:
+    schedule_id:
+      type: integer
+      required: true
+      description: "削除するスケジュールのID"
+  hints: |
+    まずschedule_listでIDを確認してから削除する。
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.schedule_tool
+  class: ScheduleDeleteTool
+  services: [schedule_manager]

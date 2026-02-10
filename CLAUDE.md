@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-AIラジオDJ風Discordボット「らじたん」。会話を追跡し、要約・クイズ・音楽レコメンドを能動的に提供する。
+AIラジオDJ風Discordボット「らじたん」。会話を追跡し、要約・クイズ・音楽レコメンド・Instagram自動投稿を能動的に提供する。
 DeepSeek v3による自律エージェントシステムを搭載。FastAPIでWebダッシュボード（RajitanWebUI）向けのAPIも提供。
 
 ## Tech Stack
@@ -16,6 +16,9 @@ DeepSeek v3による自律エージェントシステムを搭載。FastAPIでWe
 - FastAPI + uvicorn（Web API）
 - Redis（任意、メモリフォールバックあり）
 - SQLite (aiosqlite)
+- instagrapi 2.1.3（Instagram非公式API）
+- google-generativeai（Nanobanana画像生成 / Gemini）
+- Pillow（PNG→JPEG変換）
 
 ## Commands
 
@@ -70,7 +73,8 @@ RajitanApplication (main.py)
   ├── EnhancedScheduleManager, TriggerManager
   ├── LeveMagiClient
   ├── MemoryManager (3層記憶: Redis + SQLite)
-  ├── AgentOrchestrator ← DeepSeek/OpenAI + ToolRegistry(22tools) + MemoryManager
+  ├── InstagramClient, CanvaClient（任意）
+  ├── AgentOrchestrator ← DeepSeek/OpenAI + ToolRegistry(最大27tools) + MemoryManager
   ├── ResponseGate ← LLM品質ゲート + 会話参加判定
   └── RajitanBot ← inject_dependencies() で全サービス注入
 ```
@@ -102,7 +106,7 @@ ResponseGate.should_send() → LLM品質チェック後に送信
 
 `rajitan/agent/response_gate.py` — DeepSeekを**non-thinking**で呼び出し。
 
-- `should_send(response, user_message)`: 応答品質チェック。内部思考の漏れ・重複を検出しブロック。フェイルセーフ=送信
+- `should_send(response, user_message)`: ユーザー向け回答か内部思考の漏れかを判定。フェイルセーフ=送信
 - `should_participate(new_message, recent_messages)`: 会話ウィンドウ内での三択判定 YES/SKIP/LEAVE。フェイルセーフ=skip
 - **会話ウィンドウ**: @メンション後2分間（`CONVERSATION_WINDOW_SECONDS=120`）、メンションなしで応答可能。LEAVEでウィンドウ即時終了
 
@@ -116,9 +120,9 @@ ResponseGate.should_send() → LLM品質チェック後に送信
 - **ループ防止**: 同一ツール連続使用を検出して警告
 - **コンテキスト管理**: 80Kトークン超過で古い交換を圧縮（context_manager.py、日本語3文字≈1トークン）
 
-### 登録ツール（22個）
+### 登録ツール（最大27個、一部条件付き）
 
-| Tool | 既存サービス | 機能 |
+| Tool | サービス | 機能 |
 |---|---|---|
 | `summary` | ConversationSummarizer | 会話要約 |
 | `quiz` | QuizGenerator/Runner | クイズ生成・実行 |
@@ -136,9 +140,21 @@ ResponseGate.should_send() → LLM品質チェック後に送信
 | `remember` / `recall` | MemoryManager | 長期記憶の読み書き |
 | `get_current_time` | — | 現在日時・曜日取得 |
 | `web_search` | Brave Search API | ウェブ検索（最大2回/実行） |
+| `instagram_post` | InstagramClient | Instagram写真投稿（画像URL+キャプション） |
+| `instagram_status` | InstagramClient | Instagram連携状態確認 |
+| `generate_image` | Google Gemini (Nanobanana) | AI画像生成（条件: `GOOGLE_AI_API_KEY`） |
+| `canva_design` | CanvaClient | Canvaテンプレートからデザイン生成（条件: Canva設定） |
+| `workflow_edit` | WorkflowEditor | ワークフロー設定編集 |
 
 新しいツールを追加する手順: `Tool` ABCを継承 → `main.py` で `ToolRegistry.register()` → LLMが自動認識。
 ツール定義は起動時に全ロード、動的追加・削除しない。
+
+### ツール設計ガイドライン
+
+- **`ToolResult.data`にはデータのみ返す**。ユーザー向けの固定文言や装飾文は入れない
+- エージェント（DeepSeek）がdataを解釈して自然な回答を生成する
+- 例: `ToolResult(data="未連携")` → エージェントが「まだInstagram連携されてないよ！」等に変換
+- ツールdescriptionにURL等を含める場合、括弧で囲まない（LLMがURL破壊する）
 
 ## 3層記憶システム（agent/memory/）
 
@@ -198,15 +214,34 @@ RedisClient未接続時はメモリ辞書にフォールバック。QuizRunner, 
 - `rajitan/agent/llm/openai_provider.py` — OpenAI互換API実装（DeepSeek/OpenAI共用）
 - `rajitan/agent/context_manager.py` — コンテキストウィンドウ管理（80Kトークン超で圧縮）
 - `rajitan/utils/config.py` — .envからの設定読み込み
+- `rajitan/api/instagram_client.py` — Instagram投稿クライアント（instagrapi、セッション永続化）
+- `rajitan/api/canva_client.py` — Canva Connect APIクライアント（OAuth、デザイン生成・エクスポート）
+- `rajitan/agent/tools/instagram_tool.py` — Instagram/画像生成/Canvaツール群（4ツール）
+- `rajitan/web/routes/instagram_auth.py` — Instagram認証API（ログイン/2FA/ステータス/切断）
+- `rajitan/web/routes/canva_auth.py` — Canva OAuth認証API
 
 ## Web API (FastAPI)
 
 `API_ENABLED=true` で起動。RajitanWebUI（Next.js）からアクセスされる。
 `app_state` dictにサービス参照を格納し、ルートハンドラから `app_state.get("key")` でアクセス。
 
+### 主要ルート
+
+| パス | 機能 |
+|---|---|
+| `/api/instagram/login` | Instagramログイン（POST: username/password） |
+| `/api/instagram/login/2fa` | Instagram 2FAコード送信 |
+| `/api/instagram/status` | Instagram連携状態確認 |
+| `/api/instagram/disconnect` | Instagram連携解除 |
+| `/api/canva/auth` | Canva OAuth開始 |
+| `/api/canva/callback` | Canva OAuthコールバック |
+| `/api/canva/status` | Canva連携状態確認 |
+| `/api/canva/disconnect` | Canva連携解除 |
+| `/api/google/auth`, `/callback` | Google Calendar OAuth |
+
 ## Storage
 
-- **SQLite** (`storage/sqlite_client.py`): guilds, channels, characters, schedules, usage_stats, agent_memories, LeveMagiテーブル群
+- **SQLite** (`storage/sqlite_client.py`): guilds, channels, characters, schedules, usage_stats, agent_memories, instagram_sessions, canva_tokens, LeveMagiテーブル群
 - **Redis** (`storage/redis_client.py`): 会話データ、セッション、ワーキングメモリ、アクションログ。未接続時はメモリ辞書にフォールバック
 - **注意**: VPSのSQLiteバージョンが古いため、UNIQUE制約に式（COALESCE等）を使わないこと。カラムをNOT NULL DEFAULT ''にして単純なカラム参照で対応する
 
@@ -217,6 +252,8 @@ LLM: `DEEPSEEK_API_KEY`（エージェント用）, `OPENAI_API_KEY`（レガシ
 検索: `BRAVE_SEARCH_API_KEY`（web_searchツール用、任意）
 任意: `YOUTUBE_API_KEY`, `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET`
 任意: `REDIS_HOST`/`REDIS_PORT` (なければメモリフォールバック)
+画像生成: `GOOGLE_AI_API_KEY`（Nanobanana/Gemini画像生成用）
+Canva: `CANVA_CLIENT_ID`, `CANVA_CLIENT_SECRET`, `CANVA_REDIRECT_URI`
 API: `API_ENABLED=true`, `API_HOST`, `API_PORT=8000`, `API_CORS_ORIGINS`
 
 ## Key Decisions
@@ -228,6 +265,10 @@ API: `API_ENABLED=true`, `API_HOST`, `API_PORT=8000`, `API_CORS_ORIGINS`
 - 会話データはRedis/メモリに保存、不足時はDiscord API履歴にフォールバック
 - パーソナリティ8種: default, cheerful, calm, witty, professional, friendly, sarcastic, rajitan
 - 分類・判定タスクは必ず`thinking=False`で呼ぶ（DeepSeek thinking modeの制約）
+- Instagram連携は`instagrapi`（非公式API）を使用。公式Graph APIは使わない
+- Instagram認証: username/passwordでログイン → セッションJSON永続化（パスワードは保存しない）
+- 画像生成はNanobanana（Google Gemini `gemini-2.0-flash-exp`）を使用。DALL-Eは使わない
+- instagrapiは同期ライブラリのため`run_in_executor()`で非同期ラップ
 
 ## Deployment
 

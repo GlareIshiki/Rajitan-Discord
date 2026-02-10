@@ -193,6 +193,22 @@ class AgentOrchestrator:
 
             # Case 1: Final text response (no tool calls)
             if llm_response.is_final:
+                # Nudge: if step 0 returned text-only without using any tools,
+                # and the request isn't a simple greeting, retry once with a hint.
+                if step == 0 and not tools_used and not self._is_light(user_message, wf):
+                    logger.info("Step 0 text-only for non-trivial request, nudging tool usage")
+                    messages.append({"role": "assistant", "content": llm_response.content})
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "【システム】あなたにはツールが利用可能です。"
+                            "ユーザーのリクエストにツールを使って対応できませんか？"
+                            "過去の会話で失敗していても、状況は変わっている可能性があります。"
+                            "ツールが必要なら実行してください。不要なら先ほどの回答をそのまま返してください。"
+                        ),
+                    })
+                    continue
+
                 elapsed = time.time() - start_time
                 logger.info(
                     f"Agent completed in {step + 1} steps, {elapsed:.1f}s, "
@@ -332,6 +348,16 @@ class AgentOrchestrator:
         else:
             p = sp.step_params_normal
             return p.max_tokens, tool_definitions if (p.tools_enabled and tool_definitions) else None
+
+    def _is_light(self, user_message: str, wf: WorkflowConfig = None) -> bool:
+        """Check if the message is a simple greeting/reaction that doesn't need tools."""
+        if wf is None:
+            wf = self._get_base_wf()
+        if len(user_message) < wf.complexity.min_length:
+            return True
+        if any(p in user_message for p in wf.complexity.light_patterns):
+            return True
+        return False
 
     def _looks_complex(self, user_message: str, wf: WorkflowConfig = None) -> bool:
         """Heuristic: does this request likely need multi-step tool use?"""

@@ -1,0 +1,23 @@
+version: 1
+
+meta:
+  display_name: "会話要約"
+  category: media
+  icon: "file-text"
+  tags: ["conversation", "summary"]
+
+ai:
+  name: summary
+  description: |
+    現在のチャンネルの会話を要約する。最近の会話内容をまとめて、重要なポイントを抽出する。
+  parameters: {}
+  hints: |
+    パラメータ不要。呼ぶだけで最近の会話が要約される。
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.summary_tool
+  class: SummaryTool
+  services: [conversation_summarizer, conversation_tracker]

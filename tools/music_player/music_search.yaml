@@ -1,0 +1,28 @@
+version: 1
+
+meta:
+  display_name: "曲検索"
+  category: music_player
+  icon: "search"
+  tags: ["music", "search", "youtube"]
+
+ai:
+  name: music_search
+  description: |
+    YouTubeで曲を検索する。検索結果を表示し、
+    ユーザーが選んだ曲をmusic_playのqueryにURL/タイトルを渡して再生できる。
+  parameters:
+    q:
+      type: string
+      required: true
+      description: "検索キーワード（曲名、アーティスト名など）"
+  hints: |
+    - 検索結果からmusic_playのqueryにURLを渡して再生
+
+execution:
+  max_calls_per_execution: 3
+  requires_context: false
+  handler: builtin
+  builtin: music_player_api
+  _endpoint: /api/search
+  _method: GET

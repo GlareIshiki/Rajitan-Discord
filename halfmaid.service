@@ -1,0 +1,15 @@
+[Unit]
+Description=HalfMaid
+After=network.target
+
+[Service]
+Type=simple
+User=glareishiki
+WorkingDirectory=/home/glareishiki/Rajitan-Discord
+ExecStart=/home/glareishiki/Rajitan-Discord/venv/bin/python -m halfmaid.main
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

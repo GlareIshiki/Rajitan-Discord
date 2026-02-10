@@ -1,0 +1,35 @@
+version: 1
+
+meta:
+  display_name: "Canvaデザイン"
+  category: integration
+  icon: "palette"
+  tags: ["canva", "design", "image"]
+
+ai:
+  name: canva_design
+  description: |
+    Canvaのブランドテンプレートからデザインを生成し、画像URLを返す。
+    Instagram投稿用の画像をテンプレートから作成する場合に使う。
+    事前にユーザーがCanvaアカウントを連携している必要がある。
+  parameters:
+    template_id:
+      type: string
+      required: true
+      description: "使用するCanvaブランドテンプレートのID"
+    text_replacements:
+      type: object
+      required: false
+      description: "テンプレート内のテキストフィールドの置換（例: {\"title\": \"今日のニュース\"}）"
+  hints: |
+    - CanvaのOAuth連携が必要
+    - 生成された画像URLはinstagram_postに使える
+    - 1回の実行で最大2回まで
+
+execution:
+  max_calls_per_execution: 2
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.instagram_tool
+  class: CanvaDesignTool
+  services: [canva_client]

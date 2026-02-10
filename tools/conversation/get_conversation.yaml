@@ -1,0 +1,30 @@
+version: 1
+
+meta:
+  display_name: "会話履歴取得"
+  category: conversation
+  icon: "message-circle"
+  tags: ["conversation", "history"]
+
+ai:
+  name: get_conversation
+  description: |
+    現在のチャンネルの会話履歴を取得する。デフォルトで直近50件。最大1000件まで指定可能。
+    多くの会話を確認したい時に使う。
+  parameters:
+    limit:
+      type: integer
+      required: false
+      default: 50
+      description: "取得するメッセージ件数（デフォルト: 50、最大: 1000）"
+  hints: |
+    - 大量取得はレスポンスが遅くなるため、必要最小限で
+    - ボットのメッセージは除外される
+
+execution:
+  max_calls_per_execution: 5
+  requires_context: true
+  handler: python_class
+  module: rajitan.agent.tools.conversation_tool
+  class: GetConversationTool
+  services: [conversation_tracker]

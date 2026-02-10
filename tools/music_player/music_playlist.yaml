@@ -1,0 +1,40 @@
+version: 1
+
+meta:
+  display_name: "プレイリスト"
+  category: music_player
+  icon: "list"
+  tags: ["music", "playlist", "save"]
+
+ai:
+  name: music_playlist
+  description: |
+    プレイリストの保存・読み込み・一覧表示・削除を行う。
+    現在のキューをプレイリストとして保存したり、保存済みプレイリストを読み込んで再生できる。
+  parameters:
+    action:
+      type: string
+      required: true
+      enum: [list, save, load, delete]
+      description: "list: 一覧, save: 保存, load: 読み込み, delete: 削除"
+    name:
+      type: string
+      required: false
+      description: "プレイリスト名（save時に必須）"
+    playlist_id:
+      type: integer
+      required: false
+      description: "プレイリストID（load/delete時に必須）"
+  hints: |
+    - save: 現在のキューを名前を付けて保存
+    - load: 保存済みプレイリストをキューに読み込んで再生
+    - list: このサーバーの全プレイリスト一覧
+    - delete: プレイリストを削除
+
+execution:
+  max_calls_per_execution: 3
+  requires_context: true
+  handler: builtin
+  builtin: music_player_api
+  _endpoint: /api/playlists/action
+  _method: POST
