@@ -292,6 +292,19 @@ class RajitanApplication:
             from rajitan.agent.workflow.execution_log import ExecutionLogCollector
             execution_log = ExecutionLogCollector()
 
+            # Initialize team coordinator (optional, controlled by workflow config)
+            team_coordinator = None
+            if wf.team.enabled:
+                from rajitan.agent.team.coordinator import TeamCoordinator
+                team_coordinator = TeamCoordinator(
+                    llm_provider=llm_provider,
+                    tool_registry=tool_registry,
+                    team_config=wf.team,
+                    character_manager=self.character_manager,
+                    execution_log=execution_log,
+                )
+                logger.info(f"Team mode enabled (max {wf.team.max_sub_agents} sub-agents)")
+
             agent_orchestrator = AgentOrchestrator(
                 llm_provider=llm_provider,
                 tool_registry=tool_registry,
@@ -300,6 +313,7 @@ class RajitanApplication:
                 memory_manager=memory_manager,
                 workflow_loader=workflow_loader,
                 execution_log=execution_log,
+                team_coordinator=team_coordinator,
             )
             logger.info(f"Agent system initialized with {len(tool_registry)} tools")
 

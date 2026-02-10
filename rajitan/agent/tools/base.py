@@ -122,17 +122,28 @@ class ToolRegistry:
             return self._yaml_tools[name].max_calls_per_execution
         return 5
 
-    async def execute(self, name: str, disabled: set = None, **kwargs) -> ToolResult:
+    async def execute(
+        self, name: str, disabled: set = None, call_counts: Dict[str, int] = None, **kwargs
+    ) -> ToolResult:
         """Execute a tool by name, enforcing per-execution call limits.
 
         Handles both legacy Tool instances and YAML ToolDefinitions.
+
+        Args:
+            name: Tool name to execute.
+            disabled: Set of disabled tool names.
+            call_counts: External call count dict (for sub-agent isolation).
+                         If None, uses the shared internal counter.
         """
         if disabled and name in disabled:
             return ToolResult(success=False, error=f"Tool '{name}' is disabled.")
 
+        # Use external or internal call counts
+        counts = call_counts if call_counts is not None else self._call_counts
+
         # Check call limits
         max_calls = self._get_max_calls(name)
-        count = self._call_counts.get(name, 0)
+        count = counts.get(name, 0)
         if count >= max_calls:
             return ToolResult(
                 success=False,
@@ -158,7 +169,7 @@ class ToolRegistry:
             else:
                 return ToolResult(success=False, error=f"Unknown tool: {name}")
 
-            self._call_counts[name] = count + 1
+            counts[name] = count + 1
             return result
 
         except Exception as e:

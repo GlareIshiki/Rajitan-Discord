@@ -20,6 +20,7 @@ from rajitan.agent.workflow.schema import (
     ResponseGateConfig,
     StepInjectionConfig,
     StepParams,
+    TeamConfig,
     ToolOverride,
     ToolsConfig,
     WorkflowConfig,
@@ -168,6 +169,7 @@ class WorkflowLoader:
             response_gate=self._parse_response_gate(raw.get("response_gate", {})),
             prompts=self._parse_prompts(raw.get("prompts", {})),
             tools=self._parse_tools(raw.get("tools", {})),
+            team=self._parse_team(raw.get("team", {})),
         )
 
     def _parse_agent_loop(self, d: dict) -> AgentLoopConfig:
@@ -248,6 +250,21 @@ class WorkflowLoader:
             default_max_calls=d.get("defaults", {}).get("max_calls_per_execution", 5),
             overrides=overrides,
             disabled=d.get("disabled", []),
+        )
+
+    def _parse_team(self, d: dict) -> TeamConfig:
+        return TeamConfig(
+            enabled=d.get("enabled", False),
+            max_sub_agents=d.get("max_sub_agents", 3),
+            sub_agent_max_steps=d.get("sub_agent_max_steps", 8),
+            sub_agent_timeout_seconds=d.get("sub_agent_timeout_seconds", 60.0),
+            sub_agent_temperature=d.get("sub_agent_temperature", 0.7),
+            sub_agent_max_tokens=d.get("sub_agent_max_tokens", 1500),
+            decompose_max_tokens=d.get("decompose_max_tokens", 800),
+            decompose_temperature=d.get("decompose_temperature", 0.3),
+            synthesize_max_tokens=d.get("synthesize_max_tokens", 1500),
+            synthesize_temperature=d.get("synthesize_temperature", 0.7),
+            min_message_length=d.get("min_message_length", 30),
         )
 
     # ------------------------------------------------------------------

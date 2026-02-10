@@ -16,14 +16,22 @@ YDL_OPTS = {
     "quiet": True,
     "no_warnings": True,
     "extract_flat": False,
-    "default_search": "ytsearch",
+    "default_search": "ytsearch10",
     "socket_timeout": 15,
 }
 
 YDL_SEARCH_OPTS = {
     **YDL_OPTS,
     "extract_flat": True,
-    "default_search": "ytsearch5",
+    "default_search": "ytsearch10",
+}
+
+YDL_RELATED_OPTS = {
+    "format": "bestaudio/best",
+    "quiet": True,
+    "no_warnings": True,
+    "extract_flat": True,
+    "socket_timeout": 15,
 }
 
 
@@ -51,22 +59,27 @@ class YtDlpExtractor:
             if not info:
                 return None
 
-            # If search returned entries, take first
+            # If search returned entries, take first valid one
             if "entries" in info:
                 entries = list(info["entries"])
                 if not entries:
                     return None
-                info = entries[0]
-                # Need full extraction for the entry
-                if not info.get("url") or info.get("_type") == "url":
-                    webpage_url = info.get("url") or info.get("webpage_url", "")
-                    if webpage_url:
-                        t2 = time.monotonic()
-                        info = await asyncio.to_thread(self._extract_sync, webpage_url)
-                        t3 = time.monotonic()
-                        logger.info(f"yt-dlp re-extract '{webpage_url}': {t3-t2:.1f}s")
-                        if not info:
-                            return None
+                # Try entries in order until one works
+                for entry in entries:
+                    if not entry:
+                        continue
+                    info = entry
+                    if not info.get("url") or info.get("_type") == "url":
+                        webpage_url = info.get("url") or info.get("webpage_url", "")
+                        if webpage_url:
+                            t2 = time.monotonic()
+                            info = await asyncio.to_thread(self._extract_sync, webpage_url)
+                            t3 = time.monotonic()
+                            logger.info(f"yt-dlp re-extract '{webpage_url}': {t3-t2:.1f}s")
+                    if info and (info.get("url") or info.get("webpage_url")):
+                        break
+                else:
+                    return None
 
             return self._to_track_info(info)
         except Exception as e:
@@ -96,6 +109,45 @@ class YtDlpExtractor:
             logger.error(f"yt-dlp search failed for '{query}': {e}")
             return []
 
+    async def get_related(self, url: str, limit: int = 5, exclude_urls: set = None) -> list[TrackInfo]:
+        """Get related videos from a YouTube URL for autoplay."""
+        try:
+            info = await asyncio.to_thread(self._extract_related_sync, url)
+            if not info:
+                return []
+
+            # YouTube returns related videos in different fields
+            related_entries = []
+            # Try 'related_videos' first (some yt-dlp versions)
+            for rv in info.get("related_videos", []):
+                if rv and rv.get("id"):
+                    related_entries.append(rv)
+            # Also check 'entries' if this is a playlist/mix result
+            for entry in info.get("entries", []):
+                if entry:
+                    related_entries.append(entry)
+
+            exclude = exclude_urls or set()
+            results = []
+            for entry in related_entries:
+                entry_url = entry.get("webpage_url") or entry.get("url", "")
+                if not entry_url or entry_url in exclude:
+                    continue
+                try:
+                    track = self._to_track_info(entry)
+                    if track:
+                        results.append(track)
+                        if len(results) >= limit:
+                            break
+                except Exception:
+                    continue
+
+            logger.info(f"get_related '{url}': found {len(results)} tracks")
+            return results
+        except Exception as e:
+            logger.error(f"get_related failed for '{url}': {e}")
+            return []
+
     async def refresh_stream_url(self, url: str) -> Optional[str]:
         """Re-extract a fresh stream URL for a given YouTube URL."""
         try:
@@ -109,6 +161,10 @@ class YtDlpExtractor:
     def _extract_sync(self, query: str) -> Optional[dict]:
         with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
             return ydl.extract_info(query, download=False)
+
+    def _extract_related_sync(self, url: str) -> Optional[dict]:
+        with yt_dlp.YoutubeDL(YDL_RELATED_OPTS) as ydl:
+            return ydl.extract_info(url, download=False)
 
     def _to_track_info(self, info: dict) -> Optional[TrackInfo]:
         stream_url = info.get("url")

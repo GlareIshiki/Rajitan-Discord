@@ -1,0 +1,27 @@
+version: 1
+
+meta:
+  display_name: "オートプレイ"
+  category: music_player
+  icon: "repeat"
+  tags: ["music", "voice", "autoplay"]
+
+ai:
+  name: music_autoplay
+  description: |
+    オートプレイのon/offを切り替える。onの場合、キューが空になっても
+    最後に再生した曲に関連するYouTube動画を自動で再生し続ける。
+    デフォルトはon。offにすると、キューが空になったら停止する。
+  parameters:
+    enabled:
+      type: boolean
+      required: true
+      description: "true=オートプレイon, false=オートプレイoff"
+
+execution:
+  max_calls_per_execution: 2
+  requires_context: true
+  handler: builtin
+  builtin: music_player_api
+  _endpoint: /api/player/autoplay
+  _method: POST

@@ -24,6 +24,7 @@ ai:
     - URLでもキーワード検索でもOK
     - 既に再生中の場合はキューに追加される
     - music（音楽レコメンド）ツールの結果のURLをここに渡して再生も可能
+    - 「別の曲にして」「曲を変えて」の場合はmusic_skipを先に呼んでからmusic_playを呼ぶ
 
 execution:
   max_calls_per_execution: 5

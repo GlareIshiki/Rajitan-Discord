@@ -25,6 +25,8 @@ class GuildVoiceState:
     current_track: Optional[Track] = None
     start_time: Optional[datetime] = None
     idle_task: Optional[asyncio.Task] = None
+    autoplay: bool = True
+    played_urls: set = field(default_factory=set)
 
 
 class VoiceManager:
@@ -157,6 +159,7 @@ class VoiceManager:
         self.queue.get(guild_id).clear()
         state.current_track = None
         state.start_time = None
+        state.played_urls.clear()
 
         if vc and vc.is_connected():
             vc.stop()
@@ -226,6 +229,7 @@ class VoiceManager:
             "volume": gq.volume,
             "loop_mode": gq.loop_mode,
             "shuffle": gq.shuffle,
+            "autoplay": state.autoplay,
         }
 
         if playing and state.current_track:
@@ -256,6 +260,8 @@ class VoiceManager:
 
         state.current_track = track
         state.start_time = datetime.now()
+        if track.url:
+            state.played_urls.add(track.url)
 
         # Verify connection before playing
         if not vc.is_connected():
@@ -304,6 +310,9 @@ class VoiceManager:
             if fresh:
                 next_track.stream_url = fresh
             await self._start_playback(guild_id, vc, next_track)
+        elif state.autoplay and state.current_track:
+            # Autoplay: find related tracks when queue is empty
+            await self._autoplay(guild_id, vc, state)
         else:
             state.current_track = None
             state.start_time = None
@@ -311,6 +320,62 @@ class VoiceManager:
             state.idle_task = asyncio.create_task(
                 self._idle_disconnect(guild_id)
             )
+
+    async def set_autoplay(self, guild_id: str, enabled: bool) -> dict:
+        """Enable or disable autoplay for a guild."""
+        state = self._state(guild_id)
+        state.autoplay = enabled
+        if not enabled:
+            state.played_urls.clear()
+        return {"success": True, "autoplay": enabled}
+
+    async def _autoplay(self, guild_id: str, vc: discord.VoiceClient, state: GuildVoiceState) -> None:
+        """Find and play a related track when queue is empty."""
+        last_url = state.current_track.url if state.current_track else None
+        if not last_url:
+            state.current_track = None
+            state.start_time = None
+            state.idle_task = asyncio.create_task(self._idle_disconnect(guild_id))
+            return
+
+        logger.info(f"Autoplay: finding related tracks for {last_url}")
+        try:
+            related = await self.extractor.get_related(last_url, limit=10, exclude_urls=state.played_urls)
+            if not related:
+                # Fallback: search by last track's title/artist
+                query = f"{state.current_track.title} {state.current_track.artist}"
+                logger.info(f"Autoplay fallback: searching '{query}'")
+                related = await self.extractor.search(query, limit=5)
+                related = [t for t in related if t.url not in state.played_urls]
+
+            if related:
+                track_info = related[0]
+                track = Track(
+                    title=track_info.title,
+                    artist=track_info.artist,
+                    url=track_info.url,
+                    stream_url=track_info.stream_url,
+                    duration_seconds=track_info.duration_seconds,
+                    thumbnail=track_info.thumbnail,
+                    requester="Autoplay",
+                )
+                # Refresh stream URL if needed
+                if not track.stream_url:
+                    fresh = await self.extractor.refresh_stream_url(track.url)
+                    if fresh:
+                        track.stream_url = fresh
+                if track.stream_url:
+                    logger.info(f"Autoplay: playing {track.title} - {track.artist}")
+                    await self._start_playback(guild_id, vc, track)
+                    return
+
+            logger.info("Autoplay: no related tracks found, starting idle timer")
+        except Exception as e:
+            logger.error(f"Autoplay failed: {e}")
+
+        state.current_track = None
+        state.start_time = None
+        state.idle_task = asyncio.create_task(self._idle_disconnect(guild_id))
 
     async def _idle_disconnect(self, guild_id: str) -> None:
         """Disconnect after idle timeout."""

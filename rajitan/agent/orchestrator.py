@@ -54,6 +54,7 @@ class AgentOrchestrator:
         memory_manager=None,
         workflow_loader: "WorkflowLoader" = None,
         execution_log: "ExecutionLogCollector" = None,
+        team_coordinator=None,
     ):
         self.llm = llm_provider
         self.tools = tool_registry
@@ -62,6 +63,7 @@ class AgentOrchestrator:
         self.memory_manager = memory_manager
         self._wf_loader = workflow_loader
         self._exec_log = execution_log
+        self.team_coordinator = team_coordinator
 
         # Context manager uses base workflow config
         wf = self._get_base_wf()
@@ -99,6 +101,32 @@ class AgentOrchestrator:
             wf = WorkflowConfig()
 
         max_steps = wf.agent_loop.max_steps
+
+        # Team mode: decompose → parallel sub-agents → synthesize
+        if self.team_coordinator and wf.team.enabled:
+            from rajitan.agent.team.coordinator import TeamResult
+            team_result = await self.team_coordinator.try_team_execute(
+                user_message=user_message,
+                context=context,
+                wf=wf,
+                exec_id=exec_id,
+            )
+            if team_result.used_team and team_result.response:
+                logger.info("Team mode produced result, skipping single-agent loop")
+                all_tools = []
+                for sr in team_result.sub_results:
+                    all_tools.extend(sr.tools_used)
+                result = AgentResult(
+                    response=team_result.response,
+                    success=True,
+                    steps_taken=0,
+                    tools_used=all_tools,
+                    total_tokens=team_result.total_tokens,
+                    goal=user_message,
+                )
+                if self.memory_writer:
+                    await self.memory_writer.process_result(result, context)
+                return result
 
         # Determine thinking mode based on message complexity
         use_thinking = self._looks_complex(user_message, wf)

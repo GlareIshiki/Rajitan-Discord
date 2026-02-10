@@ -120,6 +120,22 @@ class ToolsConfig:
 
 
 @dataclass
+class TeamConfig:
+    """Multi-agent team configuration."""
+    enabled: bool = False
+    max_sub_agents: int = 3
+    sub_agent_max_steps: int = 8
+    sub_agent_timeout_seconds: float = 60.0
+    sub_agent_temperature: float = 0.7
+    sub_agent_max_tokens: int = 1500
+    decompose_max_tokens: int = 800
+    decompose_temperature: float = 0.3
+    synthesize_max_tokens: int = 1500
+    synthesize_temperature: float = 0.7
+    min_message_length: int = 30
+
+
+@dataclass
 class WorkflowConfig:
     """Complete workflow configuration (base + user overlay merged)."""
     version: int = 1
@@ -131,3 +147,4 @@ class WorkflowConfig:
     response_gate: ResponseGateConfig = field(default_factory=ResponseGateConfig)
     prompts: PromptsConfig = field(default_factory=PromptsConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
+    team: TeamConfig = field(default_factory=TeamConfig)

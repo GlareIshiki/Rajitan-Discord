@@ -38,6 +38,11 @@ class ShuffleRequest(BaseModel):
     guild_id: str
 
 
+class AutoplayRequest(BaseModel):
+    guild_id: str
+    enabled: bool = True
+
+
 def _get_vm():
     vm = voice_module.voice_manager
     if not vm:
@@ -106,3 +111,9 @@ async def loop(req: LoopRequest):
 async def shuffle(req: ShuffleRequest):
     vm = _get_vm()
     return await vm.toggle_shuffle(req.guild_id)
+
+
+@router.post("/autoplay")
+async def autoplay(req: AutoplayRequest):
+    vm = _get_vm()
+    return await vm.set_autoplay(req.guild_id, req.enabled)

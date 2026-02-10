@@ -205,3 +205,20 @@ tools:
     quiz:
       max_calls_per_execution: 1
   # disabled: []
+
+# ============================================================
+# マルチエージェントチーム設定
+# ============================================================
+
+team:
+  enabled: false                    # デフォルト無効（明示的にtrueにして有効化）
+  max_sub_agents: 3                 # 最大サブエージェント数
+  sub_agent_max_steps: 8            # サブエージェントの最大ステップ数
+  sub_agent_timeout_seconds: 60.0   # サブエージェントのタイムアウト（秒）
+  sub_agent_temperature: 0.7
+  sub_agent_max_tokens: 1500
+  decompose_max_tokens: 800         # タスク分解LLM呼び出しのmax_tokens
+  decompose_temperature: 0.3        # 低温: 正確な分解が必要
+  synthesize_max_tokens: 1500       # 統合LLM呼び出しのmax_tokens
+  synthesize_temperature: 0.7
+  min_message_length: 30            # この文字数未満はチーム不使用
