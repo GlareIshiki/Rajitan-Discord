@@ -39,7 +39,7 @@ class QuizTool(Tool):
         if agent_context is None:
             return ToolResult(success=False, error="agent_context is required")
 
-        channel = agent_context.message.channel
+        channel = agent_context.channel
         channel_id = agent_context.channel_id
         guild_id = agent_context.guild_id
 
@@ -47,7 +47,7 @@ class QuizTool(Tool):
         summary_data = await self.tracker.get_conversation_summary_data(channel_id)
         messages = summary_data["messages"] if summary_data and summary_data.get("messages") else None
 
-        if not messages:
+        if not messages and channel:
             # Fallback: fetch from Discord API directly
             try:
                 discord_msgs = []
@@ -58,7 +58,6 @@ class QuizTool(Tool):
 
                 if discord_msgs:
                     from rajitan.storage.models import Message
-                    from datetime import datetime
                     messages = [
                         Message(
                             user_id=str(m.author.id),
@@ -85,38 +84,21 @@ class QuizTool(Tool):
         if not quiz or not quiz.questions:
             return ToolResult(success=False, error="クイズの生成に失敗した。")
 
-        # 3. Send quiz questions directly to Discord
-        try:
-            questions_text = []
-            for i, q in enumerate(quiz.questions):
-                question_text = f"**Q{i + 1}. {q['question']}**\n"
-                for option in q.get("options", []):
-                    question_text += f"  {option}\n"
-                questions_text.append(question_text)
+        # 3. Store quiz for answer tracking
+        await self.runner.start_quiz(channel_id, quiz)
 
-            # Send all questions as one message
-            full_quiz = f"📝 **クイズタイム！**（{len(quiz.questions)}問）\n\n"
-            full_quiz += "\n".join(questions_text)
-            full_quiz += "\n💡 答えはA〜Dで送ってね！"
+        # 4. Return formatted quiz text for agent to present
+        questions_text = []
+        for i, q in enumerate(quiz.questions):
+            question_text = f"**Q{i + 1}. {q['question']}**\n"
+            for option in q.get("options", []):
+                question_text += f"  {option}\n"
+            questions_text.append(question_text)
 
-            # Split if too long for Discord
-            if len(full_quiz) <= 2000:
-                await channel.send(full_quiz)
-            else:
-                # Send header + questions individually
-                await channel.send(f"📝 **クイズタイム！**（{len(quiz.questions)}問）")
-                for qt in questions_text:
-                    await channel.send(qt)
-                await channel.send("💡 答えはA〜Dで送ってね！")
+        full_quiz = "\n".join(questions_text)
+        full_quiz += "\n答えはA〜Dで送ってもらう形式。"
 
-            # Store quiz for answer tracking
-            await self.runner.start_quiz(channel_id, quiz)
-
-            return ToolResult(
-                success=True,
-                data=f"クイズを{len(quiz.questions)}問出題した！",
-            )
-
-        except Exception as e:
-            logger.error(f"Failed to send quiz to Discord: {e}")
-            return ToolResult(success=False, error=f"クイズの送信に失敗した: {e}")
+        return ToolResult(
+            success=True,
+            data=f"{len(quiz.questions)}問のクイズを生成した。以下の内容をユーザーに出題して:\n\n{full_quiz}",
+        )

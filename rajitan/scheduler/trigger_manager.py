@@ -353,16 +353,20 @@ class TriggerManager:
             logger.info(f"Auto summary executed for channel {channel_id}")
 
     async def _execute_quiz_trigger(self, channel, channel_id: str):
-        """Execute automatic quiz"""
+        """Execute automatic quiz via agent orchestrator"""
+        # Agent経由: キャラクター性を反映した自然な出題
+        if hasattr(self.bot, 'agent_orchestrator') and self.bot.agent_orchestrator:
+            await self._execute_quiz_via_agent(channel, channel_id)
+            return
+
+        # フォールバック: エージェント未設定時は直接実行
         if not self.bot.quiz_generator or not self.bot.quiz_runner:
             logger.warning("Quiz components not available")
             return
 
-        # Check if quiz already active
         if await self.bot.quiz_runner.is_quiz_active(channel_id):
             return
 
-        # Get recent messages
         recent_messages = await self.bot.conversation_tracker.get_recent_conversation(
             channel_id, duration_minutes=60
         )
@@ -371,12 +375,8 @@ class TriggerManager:
             return
 
         guild_id = str(channel.guild.id)
-
-        # Generate quiz
         quiz = await self.bot.quiz_generator.generate_quiz(
-            guild_id=guild_id,
-            channel_id=channel_id,
-            messages=recent_messages
+            guild_id=guild_id, channel_id=channel_id, messages=recent_messages
         )
 
         if quiz and await self.bot.quiz_runner.start_quiz(channel_id, quiz):
@@ -389,7 +389,76 @@ class TriggerManager:
                 )
                 intro = "🎮 盛り上がってきたね！ここでクイズタイム！今までの会話からクイズを出すよ♪\n\n"
                 await channel.send(intro + question_text)
-                logger.info(f"Auto quiz executed for channel {channel_id}")
+                logger.info(f"Auto quiz (fallback) executed for channel {channel_id}")
+
+    async def _execute_quiz_via_agent(self, channel, channel_id: str):
+        """Execute quiz through agent orchestrator for natural presentation"""
+        from rajitan.agent.orchestrator import AgentContext
+
+        guild_id = str(channel.guild.id)
+        bot_id = str(self.bot.user.id) if self.bot.user else "system"
+
+        context = AgentContext(
+            guild_id=guild_id,
+            channel_id=channel_id,
+            user_id=bot_id,
+            username="AutoTrigger",
+            _channel=channel,
+        )
+
+        try:
+            result = await self.bot.agent_orchestrator.execute(
+                "会話が盛り上がってきたからクイズを出して。今までの会話内容からクイズを生成して出題して。",
+                context,
+            )
+
+            if result.response:
+                response = result.response
+                while len(response) > 2000:
+                    split_point = response[:2000].rfind("\n")
+                    if split_point == -1:
+                        split_point = 2000
+                    await channel.send(response[:split_point])
+                    response = response[split_point:]
+                if response:
+                    await channel.send(response)
+                logger.info(f"Auto quiz (agent) executed for channel {channel_id}")
+            else:
+                logger.warning(f"Agent returned empty response for quiz trigger in {channel_id}")
+
+        except Exception as e:
+            logger.error(f"Agent quiz trigger failed: {e}, falling back to direct execution")
+            # フォールバック: エージェント失敗時は直接実行を試みる
+            await self._execute_quiz_direct_fallback(channel, channel_id)
+
+    async def _execute_quiz_direct_fallback(self, channel, channel_id: str):
+        """Direct quiz execution as fallback when agent fails"""
+        if not self.bot.quiz_generator or not self.bot.quiz_runner:
+            return
+
+        if await self.bot.quiz_runner.is_quiz_active(channel_id):
+            return
+
+        recent_messages = await self.bot.conversation_tracker.get_recent_conversation(
+            channel_id, duration_minutes=60
+        )
+        if len(recent_messages) < 15:
+            return
+
+        guild_id = str(channel.guild.id)
+        quiz = await self.bot.quiz_generator.generate_quiz(
+            guild_id=guild_id, channel_id=channel_id, messages=recent_messages
+        )
+        if quiz and await self.bot.quiz_runner.start_quiz(channel_id, quiz):
+            question_info = await self.bot.quiz_runner.get_current_question(channel_id)
+            if question_info:
+                question_text = self.bot.quiz_generator.format_question_for_discord(
+                    question_info["question"],
+                    question_info["question_number"],
+                    question_info["total_questions"]
+                )
+                await channel.send("🎮 クイズタイム！\n\n" + question_text)
+                logger.info(f"Auto quiz (direct fallback) executed for channel {channel_id}")
 
     async def _execute_music_trigger(self, channel, channel_id: str, context: Dict[str, Any]):
         """Execute automatic music recommendation"""

@@ -35,7 +35,7 @@ class SummaryTool(Tool):
 
         # Fallback to Discord history
         if not messages and self.fetch_history_fn:
-            messages = await self.fetch_history_fn(agent_context.message.channel, limit=50)
+            messages = await self.fetch_history_fn(agent_context.channel, limit=50)
 
         if not messages:
             return ToolResult(success=False, error="最近の会話が見つからない。もう少し話してから要約を頼んでね。")

@@ -32,6 +32,11 @@ class HalfMaidBot(commands.Bot):
         self.tree.add_command(_queue)
         self.tree.add_command(_skip)
         self.tree.add_command(_stop)
+        self.tree.add_command(_play)
+        self.tree.add_command(_volume)
+        self.tree.add_command(_pause)
+        self.tree.add_command(_playnow)
+        self.tree.add_command(_info)
         synced = await self.tree.sync()
         logger.info(f"Synced {len(synced)} slash command(s)")
 
@@ -73,6 +78,13 @@ def _format_duration(seconds: int) -> str:
 def _get_vm():
     from halfmaid.bot.voice import voice_manager
     return voice_manager
+
+
+def _get_user_voice_channel(interaction: discord.Interaction) -> str | None:
+    """Get the user's current voice channel ID, or None."""
+    if interaction.user.voice and interaction.user.voice.channel:
+        return str(interaction.user.voice.channel.id)
+    return None
 
 
 @app_commands.command(name="np", description="現在再生中の曲を表示")
@@ -204,3 +216,221 @@ async def _stop(interaction: discord.Interaction):
     guild_id = str(interaction.guild_id)
     await vm.stop(guild_id)
     await interaction.response.send_message("Stopped and disconnected.")
+
+
+@app_commands.command(name="play", description="曲を再生またはキューに追加")
+@app_commands.describe(query="曲名、アーティスト名、またはURL")
+async def _play(interaction: discord.Interaction, query: str):
+    vm = _get_vm()
+    if not vm:
+        await interaction.response.send_message("音楽ボットが準備中です", ephemeral=True)
+        return
+
+    channel_id = _get_user_voice_channel(interaction)
+    if not channel_id:
+        await interaction.response.send_message(
+            "ボイスチャンネルに参加してください", ephemeral=True
+        )
+        return
+
+    await interaction.response.defer()
+
+    guild_id = str(interaction.guild_id)
+    result = await vm.play(
+        guild_id=guild_id,
+        query=query,
+        channel_id=channel_id,
+        requester=interaction.user.display_name,
+    )
+
+    if not result.get("success"):
+        await interaction.followup.send(
+            result.get("error", "再生に失敗しました"), ephemeral=True
+        )
+        return
+
+    track = result["track"]
+    action = result["action"]
+
+    embed = discord.Embed(color=0x1DB954)
+    embed.set_author(
+        name="Now Playing" if action == "playing" else "Queued",
+        icon_url=interaction.client.user.display_avatar.url,
+    )
+    embed.title = track["title"]
+    embed.url = track.get("url", "")
+    if track.get("artist"):
+        embed.add_field(name="Artist", value=track["artist"], inline=True)
+    embed.add_field(
+        name="Duration",
+        value=f"`{_format_duration(track.get('duration_seconds', 0))}`",
+        inline=True,
+    )
+    if action == "queued":
+        pos = result.get("position_in_queue", 0)
+        embed.add_field(name="Position", value=f"#{pos + 1}", inline=True)
+    if track.get("thumbnail"):
+        embed.set_thumbnail(url=track["thumbnail"])
+    embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+
+    await interaction.followup.send(embed=embed)
+
+
+@app_commands.command(name="volume", description="音量を設定（0-100）")
+@app_commands.describe(level="音量レベル（0-100）")
+async def _volume(interaction: discord.Interaction, level: app_commands.Range[int, 0, 100]):
+    vm = _get_vm()
+    if not vm:
+        await interaction.response.send_message("音楽ボットが準備中です", ephemeral=True)
+        return
+
+    guild_id = str(interaction.guild_id)
+    result = await vm.set_volume(guild_id, level)
+    await interaction.response.send_message(f"Volume set to {result['volume']}%")
+
+
+@app_commands.command(name="pause", description="一時停止/再開をトグル")
+async def _pause(interaction: discord.Interaction):
+    vm = _get_vm()
+    if not vm:
+        await interaction.response.send_message("音楽ボットが準備中です", ephemeral=True)
+        return
+
+    guild_id = str(interaction.guild_id)
+    status = vm.get_status(guild_id)
+
+    if status.get("paused"):
+        result = await vm.resume(guild_id)
+        if result.get("success"):
+            await interaction.response.send_message("Resumed!")
+        else:
+            await interaction.response.send_message(
+                result.get("error", "再開に失敗しました"), ephemeral=True
+            )
+    elif status.get("playing"):
+        result = await vm.pause(guild_id)
+        if result.get("success"):
+            await interaction.response.send_message("Paused!")
+        else:
+            await interaction.response.send_message(
+                result.get("error", "一時停止に失敗しました"), ephemeral=True
+            )
+    else:
+        await interaction.response.send_message("再生中ではありません", ephemeral=True)
+
+
+@app_commands.command(name="playnow", description="キューをスキップして即座に再生")
+@app_commands.describe(query="曲名、アーティスト名、またはURL")
+async def _playnow(interaction: discord.Interaction, query: str):
+    vm = _get_vm()
+    if not vm:
+        await interaction.response.send_message("音楽ボットが準備中です", ephemeral=True)
+        return
+
+    channel_id = _get_user_voice_channel(interaction)
+    if not channel_id:
+        await interaction.response.send_message(
+            "ボイスチャンネルに参加してください", ephemeral=True
+        )
+        return
+
+    await interaction.response.defer()
+
+    guild_id = str(interaction.guild_id)
+    result = await vm.play(
+        guild_id=guild_id,
+        query=query,
+        channel_id=channel_id,
+        requester=interaction.user.display_name,
+        force=True,
+    )
+
+    if not result.get("success"):
+        await interaction.followup.send(
+            result.get("error", "再生に失敗しました"), ephemeral=True
+        )
+        return
+
+    track = result["track"]
+
+    embed = discord.Embed(color=0xFF4500)
+    embed.set_author(
+        name="Now Playing (Force)",
+        icon_url=interaction.client.user.display_avatar.url,
+    )
+    embed.title = track["title"]
+    embed.url = track.get("url", "")
+    if track.get("artist"):
+        embed.add_field(name="Artist", value=track["artist"], inline=True)
+    embed.add_field(
+        name="Duration",
+        value=f"`{_format_duration(track.get('duration_seconds', 0))}`",
+        inline=True,
+    )
+    if track.get("thumbnail"):
+        embed.set_thumbnail(url=track["thumbnail"])
+    embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+
+    await interaction.followup.send(embed=embed)
+
+
+@app_commands.command(name="info", description="再生状態・設定の詳細を表示")
+async def _info(interaction: discord.Interaction):
+    vm = _get_vm()
+    if not vm:
+        await interaction.response.send_message("音楽ボットが準備中です", ephemeral=True)
+        return
+
+    guild_id = str(interaction.guild_id)
+    status = vm.get_status(guild_id)
+    gq = vm.queue.get(guild_id)
+
+    embed = discord.Embed(title="HalfMaid Status", color=0x5865F2)
+
+    # Connection
+    if status["connected"]:
+        embed.add_field(
+            name="Connection",
+            value=f"**{status['channel_name']}**",
+            inline=False,
+        )
+    else:
+        embed.add_field(name="Connection", value="Not connected", inline=False)
+
+    # Current track with progress bar
+    if status["current_track"]:
+        track = status["current_track"]
+        elapsed = track.get("elapsed_seconds", 0)
+        duration = track.get("duration_seconds", 0)
+
+        bar_length = 12
+        filled = int(bar_length * elapsed / duration) if duration > 0 else 0
+        bar = "▓" * filled + "░" * (bar_length - filled)
+
+        state_icon = "⏸️" if status["paused"] else "▶️"
+        track_text = (
+            f"{state_icon} [{track['title']}]({track.get('url', '')})\n"
+            f"{track.get('artist', 'Unknown')}\n"
+            f"`{bar}` `{_format_duration(elapsed)} / {_format_duration(duration)}`"
+        )
+        embed.add_field(name="Now Playing", value=track_text, inline=False)
+    else:
+        embed.add_field(name="Now Playing", value="Nothing playing", inline=False)
+
+    # Queue
+    total_duration = sum(t.duration_seconds for t in gq.tracks)
+    queue_text = f"{len(gq.tracks)} tracks"
+    if total_duration > 0:
+        queue_text += f" ({_format_duration(total_duration)})"
+    embed.add_field(name="Queue", value=queue_text, inline=True)
+
+    # Settings
+    settings_lines = [
+        f"Volume: {gq.volume}%",
+        f"Loop: {gq.loop_mode}",
+        f"Shuffle: {'on' if gq.shuffle else 'off'}",
+        f"Autoplay: {'on' if status.get('autoplay') else 'off'}",
+    ]
+    embed.add_field(name="Settings", value="\n".join(settings_lines), inline=True)
+
+    await interaction.response.send_message(embed=embed)

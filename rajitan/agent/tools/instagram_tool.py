@@ -49,7 +49,7 @@ class InstagramPostTool(Tool):
         if not caption:
             return ToolResult(success=False, error="captionが必要です")
 
-        discord_id = str(agent_context.message.author.id)
+        discord_id = agent_context.user_id
 
         connected = await self.instagram.is_connected(discord_id)
         if not connected:
@@ -87,7 +87,7 @@ class InstagramStatusTool(Tool):
         if agent_context is None:
             return ToolResult(success=False, error="agent_context is required")
 
-        discord_id = str(agent_context.message.author.id)
+        discord_id = agent_context.user_id
         connected = await self.instagram.is_connected(discord_id)
 
         if connected:
@@ -210,7 +210,7 @@ class CanvaDesignTool(Tool):
         if not template_id:
             return ToolResult(success=False, error="template_idが必要です")
 
-        discord_id = str(agent_context.message.author.id)
+        discord_id = agent_context.user_id
 
         connected = await self.canva.is_connected(discord_id)
         if not connected:

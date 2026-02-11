@@ -20,6 +20,10 @@ ai:
       type: string
       required: true
       description: "再生する曲（曲名、アーティスト名、YouTube URL）"
+    force:
+      type: boolean
+      required: false
+      description: "trueにするとキューをスキップして即座に再生。「今すぐ再生して」「割り込みで再生」等のリクエスト時に使用"
   hints: |
     - URLでもキーワード検索でもOK
     - 既に再生中の場合はキューに追加される

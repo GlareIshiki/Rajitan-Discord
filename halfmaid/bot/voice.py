@@ -57,6 +57,7 @@ class VoiceManager:
         channel_id: Optional[str] = None,
         user_id: Optional[str] = None,
         requester: str = "",
+        force: bool = False,
     ) -> dict:
         """Play a track or add to queue."""
         logger.info(f"play() called: guild={guild_id}, query={query[:50]}, user={user_id}")
@@ -127,8 +128,20 @@ class VoiceManager:
             state.idle_task.cancel()
             state.idle_task = None
 
-        # If already playing, add to queue
+        # If already playing
         if vc.is_playing() or vc.is_paused():
+            if force:
+                # Force play: insert at front of queue and skip current
+                gq = self.queue.get(guild_id)
+                gq.tracks.insert(0, track)
+                state.current_track = None  # prevent track-loop from replaying old track
+                vc.stop()  # triggers _play_next -> gq.next(None) -> pop(0) = our track
+                return {
+                    "success": True,
+                    "action": "force_playing",
+                    "track": self._track_dict(track),
+                    "position_in_queue": None,
+                }
             gq = self.queue.get(guild_id)
             pos = gq.add(track)
             return {

@@ -199,11 +199,13 @@ class GenericExecutor:
                 content = params.get("content", "")
                 if not content:
                     return ToolResult(success=False, error="送信するメッセージが空。")
-                await agent_context.message.channel.send(content)
+                await agent_context.channel.send(content)
                 return ToolResult(success=True, data="メッセージを送信した。")
 
             elif action == "add_reaction":
                 emoji = params.get("emoji", "👍")
+                if not agent_context.message:
+                    return ToolResult(success=False, error="メッセージがないためリアクションを追加できない。")
                 await agent_context.message.add_reaction(emoji)
                 return ToolResult(success=True, data=f"リアクション {emoji} を追加した。")
 

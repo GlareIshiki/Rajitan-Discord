@@ -62,7 +62,7 @@ class GetConversationTool(Tool):
             return ToolResult(success=False, error="agent_context is required")
 
         limit = min(max(limit, 1), 1000)
-        messages = await _fetch_discord_history(agent_context.message.channel, limit=limit)
+        messages = await _fetch_discord_history(agent_context.channel, limit=limit)
 
         if not messages:
             return ToolResult(success=True, data="会話履歴が見つからなかった。")
@@ -109,7 +109,7 @@ class SearchConversationTool(Tool):
             return ToolResult(success=False, error="検索キーワードが必要です")
 
         limit = min(max(limit, 10), 1000)
-        messages = await _fetch_discord_history(agent_context.message.channel, limit=limit)
+        messages = await _fetch_discord_history(agent_context.channel, limit=limit)
 
         keyword_lower = keyword.lower()
         matches = [
@@ -163,7 +163,7 @@ class GetUserMessagesTool(Tool):
             return ToolResult(success=False, error="ユーザー名が必要です")
 
         limit = min(max(limit, 10), 1000)
-        messages = await _fetch_discord_history(agent_context.message.channel, limit=limit)
+        messages = await _fetch_discord_history(agent_context.channel, limit=limit)
 
         username_lower = username.lower()
         matches = [

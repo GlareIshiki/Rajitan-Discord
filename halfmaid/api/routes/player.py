@@ -13,6 +13,7 @@ class PlayRequest(BaseModel):
     channel_id: Optional[str] = None
     user_id: Optional[str] = None
     requester: str = ""
+    force: bool = False
 
 
 class GuildRequest(BaseModel):
@@ -59,6 +60,7 @@ async def play(req: PlayRequest):
         channel_id=req.channel_id,
         user_id=req.user_id,
         requester=req.requester,
+        force=req.force,
     )
     if not result.get("success"):
         raise HTTPException(400, detail=result.get("error", "再生に失敗しました"))
