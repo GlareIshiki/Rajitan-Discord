@@ -3,7 +3,8 @@ import asyncio
 import json
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from rajitan.storage.models import Guild, Channel, Character, Schedule, UsageStat
+from rajitan.storage.models import Guild, Channel, Character, Schedule
+from rajitan.storage.agent_memory_repo import AgentMemoryRepo
 from rajitan.storage.persona_repo import PersonaRepo
 from rajitan.utils.logger import get_logger
 from rajitan.utils.config import get_config
@@ -18,6 +19,7 @@ class SQLiteClient:
     def __init__(self, db_path: Optional[str] = None):
         self.db_path = db_path or config.database_url.replace("sqlite:///", "")
         self._initialized = False
+        self.memory = AgentMemoryRepo(self.db_path)
         self.persona = PersonaRepo(self.db_path)
     
     async def initialize(self):
@@ -608,102 +610,6 @@ class SQLiteClient:
             logger.error(f"Failed to update schedule execution: {e}")
             return False
     
-    # Usage statistics
-    async def add_usage_stat(self, usage_stat: UsageStat) -> bool:
-        """Add usage statistics"""
-        try:
-            async with aiosqlite.connect(self.db_path) as db:
-                await db.execute(
-                    'INSERT INTO usage_stats (guild_id, channel_id, feature_type, execution_time, success) VALUES (?, ?, ?, ?, ?)',
-                    (usage_stat.guild_id, usage_stat.channel_id, usage_stat.feature_type, usage_stat.execution_time, usage_stat.success)
-                )
-                await db.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Failed to add usage stat: {e}")
-            return False
-    
-    # Agent memory operations (Tier 3)
-    async def upsert_agent_memory(
-        self, guild_id: str, category: str, key: str, value: str,
-        channel_id: str = None, user_id: str = None
-    ) -> bool:
-        """Insert or update an agent memory entry"""
-        try:
-            # Convert None to empty string for UNIQUE constraint compatibility
-            channel_id = channel_id or ''
-            user_id = user_id or ''
-            async with aiosqlite.connect(self.db_path) as db:
-                await db.execute(
-                    '''INSERT INTO agent_memories
-                       (guild_id, channel_id, user_id, category, key, value, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                       ON CONFLICT(guild_id, channel_id, user_id, category, key)
-                       DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP''',
-                    (guild_id, channel_id, user_id, category, key, value)
-                )
-                await db.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Failed to upsert agent memory: {e}")
-            return False
-
-    async def get_agent_memories(
-        self, guild_id: str, category: str = None, user_id: str = None,
-        channel_id: str = None, limit: int = 10
-    ) -> List[Dict[str, Any]]:
-        """Get agent memories with optional filters"""
-        try:
-            async with aiosqlite.connect(self.db_path) as db:
-                query = "SELECT guild_id, channel_id, user_id, category, key, value, created_at, updated_at FROM agent_memories WHERE guild_id = ?"
-                params: list = [guild_id]
-
-                if category:
-                    query += " AND category = ?"
-                    params.append(category)
-                if user_id:
-                    query += " AND user_id = ?"
-                    params.append(user_id)
-                if channel_id:
-                    query += " AND channel_id = ?"
-                    params.append(channel_id)
-
-                query += " ORDER BY updated_at DESC LIMIT ?"
-                params.append(limit)
-
-                async with db.execute(query, params) as cursor:
-                    rows = await cursor.fetchall()
-                    return [
-                        {
-                            "guild_id": r[0],
-                            "channel_id": r[1],
-                            "user_id": r[2],
-                            "category": r[3],
-                            "key": r[4],
-                            "value": r[5],
-                            "created_at": r[6],
-                            "updated_at": r[7],
-                        }
-                        for r in rows
-                    ]
-        except Exception as e:
-            logger.error(f"Failed to get agent memories: {e}")
-            return []
-
-    async def delete_agent_memory(self, guild_id: str, category: str, key: str) -> bool:
-        """Delete an agent memory entry"""
-        try:
-            async with aiosqlite.connect(self.db_path) as db:
-                await db.execute(
-                    "DELETE FROM agent_memories WHERE guild_id = ? AND category = ? AND key = ?",
-                    (guild_id, category, key)
-                )
-                await db.commit()
-                return True
-        except Exception as e:
-            logger.error(f"Failed to delete agent memory: {e}")
-            return False
-
     # User workflow operations
     async def get_user_workflow(self, guild_id: str, user_id: str) -> Optional[str]:
         """Get user workflow overlay YAML text"""

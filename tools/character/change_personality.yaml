@@ -27,4 +27,4 @@ execution:
   handler: python_class
   module: rajitan.agent.tools.character_tool
   class: CharacterTool
-  services: [character_manager, bot]
+  services: [persona_manager, bot]

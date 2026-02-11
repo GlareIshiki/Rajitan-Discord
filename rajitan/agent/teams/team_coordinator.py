@@ -41,12 +41,14 @@ class AgentTeamCoordinator:
         tool_registry: ToolRegistry,
         config: AgentTeamsConfig,
         character_manager=None,
+        persona_manager=None,
         execution_log: "ExecutionLogCollector" = None,
     ):
         self.llm = llm_provider
         self.tools = tool_registry
         self.cfg = config
         self.character_manager = character_manager
+        self.persona_manager = persona_manager
         self._exec_log = execution_log
         self.leader = TeamLeader(llm_provider, config)
 
@@ -306,16 +308,15 @@ class AgentTeamCoordinator:
 
     async def _get_character_prompt(self, guild_id: str) -> str:
         """Get character personality for synthesis."""
-        if not self.character_manager:
-            return ""
         try:
-            if hasattr(self.character_manager, "resolve_persona"):
-                persona = await self.character_manager.resolve_persona(guild_id)
+            if self.persona_manager:
+                persona = await self.persona_manager.resolve_persona(guild_id)
                 if persona and persona.system_prompt:
                     return persona.system_prompt
-            character = await self.character_manager.get_character(guild_id)
-            if character and hasattr(character, "system_prompt") and character.system_prompt:
-                return character.system_prompt
+            if self.character_manager:
+                character = await self.character_manager.get_character(guild_id)
+                if character and character.system_prompt:
+                    return character.system_prompt
         except Exception as e:
             logger.warning(f"Failed to get character for synthesis: {e}")
         return ""

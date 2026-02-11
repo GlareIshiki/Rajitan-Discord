@@ -178,9 +178,10 @@ async def get_guild_settings(guild_id: str, user=Depends(get_current_user)):
 
     # Get active persona id
     active_persona_id = ""
-    if character_manager and hasattr(character_manager, "resolve_persona"):
+    persona_manager = app_state.get("persona_manager")
+    if persona_manager:
         try:
-            persona = await character_manager.resolve_persona(guild_id)
+            persona = await persona_manager.resolve_persona(guild_id)
             if persona:
                 active_persona_id = persona.id
         except Exception as e:
@@ -232,8 +233,9 @@ async def update_guild_settings(
     if character_manager:
         # Prefer persona_id if provided
         if body.persona_id:
-            if hasattr(character_manager, "set_guild_persona"):
-                success = await character_manager.set_guild_persona(
+            persona_manager = app_state.get("persona_manager")
+            if persona_manager:
+                success = await persona_manager.set_guild_persona(
                     guild_id, body.persona_id
                 )
                 if not success:

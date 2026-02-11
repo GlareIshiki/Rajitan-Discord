@@ -12,6 +12,7 @@ from rajitan.storage.sqlite_client import SQLiteClient
 from rajitan.storage.redis_client import RedisClient
 from rajitan.api.openai_client import OpenAIClient
 from rajitan.character.manager import CharacterManager
+from rajitan.persona.manager import PersonaManager
 from rajitan.conversation.tracker import ConversationTracker
 from rajitan.conversation.analyzer import ConversationAnalyzer
 from rajitan.conversation.summarizer import ConversationSummarizer
@@ -100,6 +101,7 @@ class RajitanApplication:
         self.redis_client: Optional[RedisClient] = None
         self.openai_client: Optional[OpenAIClient] = None
         self.character_manager: Optional[CharacterManager] = None
+        self.persona_manager: Optional[PersonaManager] = None
         self.conversation_tracker: Optional[ConversationTracker] = None
         self.conversation_analyzer: Optional[ConversationAnalyzer] = None
         self.conversation_summarizer: Optional[ConversationSummarizer] = None
@@ -149,7 +151,8 @@ class RajitanApplication:
             # Initialize core services
             logger.info("Initializing core services...")
             self.character_manager = CharacterManager(self.db_client, self.openai_client)
-            
+            self.persona_manager = PersonaManager(self.db_client, self.character_manager)
+
             self.conversation_analyzer = ConversationAnalyzer(self.openai_client)
             
             self.conversation_tracker = ConversationTracker(
@@ -299,6 +302,7 @@ class RajitanApplication:
             service_registry.register("schedule_manager", self.enhanced_schedule_manager)
             service_registry.register("levemagi_client", self.levemagi_client)
             service_registry.register("character_manager", self.character_manager)
+            service_registry.register("persona_manager", self.persona_manager)
             service_registry.register("memory_manager", memory_manager)
             service_registry.register("music_recommender", self.music_recommender)
             service_registry.register("instagram_client", self.instagram_client)
@@ -350,6 +354,7 @@ class RajitanApplication:
                     tool_registry=tool_registry,
                     team_config=wf.team,
                     character_manager=self.character_manager,
+                    persona_manager=self.persona_manager,
                     execution_log=execution_log,
                 )
                 logger.info(f"Team mode enabled (max {wf.team.max_sub_agents} sub-agents)")
@@ -363,6 +368,7 @@ class RajitanApplication:
                     tool_registry=tool_registry,
                     config=wf.agent_teams,
                     character_manager=self.character_manager,
+                    persona_manager=self.persona_manager,
                     execution_log=execution_log,
                 )
                 logger.info(f"Agent Teams enabled (max {wf.agent_teams.max_teammates} teammates)")
@@ -371,6 +377,7 @@ class RajitanApplication:
                 llm_provider=llm_provider,
                 tool_registry=tool_registry,
                 character_manager=self.character_manager,
+                persona_manager=self.persona_manager,
                 conversation_tracker=self.conversation_tracker,
                 memory_manager=memory_manager,
                 workflow_loader=workflow_loader,
@@ -415,6 +422,7 @@ class RajitanApplication:
                 app_state["db_client"] = self.db_client
                 app_state["redis_client"] = self.redis_client
                 app_state["character_manager"] = self.character_manager
+                app_state["persona_manager"] = self.persona_manager
                 app_state["conversation_tracker"] = self.conversation_tracker
                 app_state["conversation_summarizer"] = self.conversation_summarizer
                 app_state["enhanced_schedule_manager"] = self.enhanced_schedule_manager

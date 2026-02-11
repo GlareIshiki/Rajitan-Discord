@@ -28,7 +28,17 @@ class AgentContext:
     channel_id: str
     user_id: str
     username: str
-    message: discord.Message
+    message: Optional[discord.Message] = None
+    _channel: Optional[Any] = field(default=None, repr=False)
+
+    @property
+    def channel(self):
+        """Get channel: explicit _channel or from message"""
+        if self._channel:
+            return self._channel
+        if self.message:
+            return self.message.channel
+        return None
 
 
 @dataclass
@@ -51,6 +61,7 @@ class AgentOrchestrator:
         tool_registry: ToolRegistry,
         character_manager,
         conversation_tracker,
+        persona_manager=None,
         memory_manager=None,
         workflow_loader: "WorkflowLoader" = None,
         execution_log: "ExecutionLogCollector" = None,
@@ -61,6 +72,7 @@ class AgentOrchestrator:
         self.llm = llm_provider
         self.tools = tool_registry
         self.character_manager = character_manager
+        self.persona_manager = persona_manager
         self.conversation_tracker = conversation_tracker
         self.memory_manager = memory_manager
         self._wf_loader = workflow_loader
@@ -78,6 +90,7 @@ class AgentOrchestrator:
         self.memory_writer = AgentMemoryWriter(memory_manager) if memory_manager else None
         self.prompt_builder = AgentPromptBuilder(
             character_manager, conversation_tracker, memory_integrator,
+            persona_manager=persona_manager,
             prompts_config=wf.prompts,
         )
 

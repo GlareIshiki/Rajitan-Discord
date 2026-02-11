@@ -300,6 +300,21 @@ class PersonaRepo:
             logger.error(f"Failed to set guild active persona: {e}")
             return False
 
+    async def get_guild_active_persona_id(self, guild_id: str) -> str:
+        """Read the active_persona_id from the characters table for a guild."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(
+                    "SELECT active_persona_id FROM characters WHERE guild_id = ?",
+                    (guild_id,),
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if row and row[0]:
+                        return row[0]
+        except Exception:
+            pass
+        return ""
+
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------

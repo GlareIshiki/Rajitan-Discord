@@ -106,8 +106,14 @@ def mock_db_client():
     client.create_schedule = AsyncMock(return_value=True)
     client.get_schedules = AsyncMock(return_value=[])
     client.update_schedule_execution = AsyncMock(return_value=True)
-    client.add_usage_stat = AsyncMock(return_value=True)
     client.close = AsyncMock()
+
+    # Agent memory repo sub-mock (mirrors AgentMemoryRepo interface)
+    memory = MagicMock()
+    memory.upsert = AsyncMock(return_value=True)
+    memory.get_memories = AsyncMock(return_value=[])
+    memory.delete = AsyncMock(return_value=True)
+    client.memory = memory
 
     # Persona repo sub-mock (mirrors PersonaRepo interface)
     persona = MagicMock()
@@ -159,6 +165,26 @@ def mock_character_manager(mock_db_client, mock_openai_client):
     )
     manager.clear_cache = MagicMock()
     manager.delete_character = AsyncMock(return_value=True)
+
+    return manager
+
+
+# ---------------------------------------------------------------------------
+# Persona manager mock
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def mock_persona_manager():
+    """Mock PersonaManager."""
+    manager = MagicMock()
+
+    manager.resolve_persona = AsyncMock(return_value=None)
+    manager.get_available_personas = AsyncMock(return_value=[])
+    manager.set_guild_persona = AsyncMock(return_value=True)
+    manager.create_custom_persona = AsyncMock(return_value=None)
+    manager.update_custom_persona = AsyncMock(return_value=True)
+    manager.delete_custom_persona = AsyncMock(return_value=True)
+    manager._persona_cache = {}
 
     return manager
 

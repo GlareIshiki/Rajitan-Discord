@@ -5,7 +5,7 @@ import httpx
 
 from rajitan.utils.logger import get_logger
 
-logger = get_logger("character.identity")
+logger = get_logger("persona.identity")
 
 
 async def update_bot_identity(bot, guild_id: str, persona) -> dict:

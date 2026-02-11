@@ -10,7 +10,7 @@ from PIL import Image
 import io
 
 from rajitan.storage.persona_models import PersonaCreate, PersonaUpdate
-from rajitan.character.identity import update_bot_identity
+from rajitan.persona.identity import update_bot_identity
 from rajitan.web.auth import get_current_user
 from rajitan.web.server import UPLOADS_DIR, app_state
 from rajitan.utils.config import get_config
@@ -29,17 +29,17 @@ router = APIRouter(tags=["personas"])
 @router.get("/guilds/{guild_id}/personas")
 async def list_personas(guild_id: str, user=Depends(get_current_user)):
     """List all personas available to a guild (presets + custom)"""
-    character_manager = app_state.get("character_manager")
-    if not character_manager:
+    persona_manager = app_state.get("persona_manager")
+    if not persona_manager:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Character manager not available",
+            detail="Persona manager not available",
         )
 
-    personas = await character_manager.get_available_personas(guild_id)
+    personas = await persona_manager.get_available_personas(guild_id)
 
     # Get active persona id for this guild
-    active_persona = await character_manager.resolve_persona(guild_id)
+    active_persona = await persona_manager.resolve_persona(guild_id)
     active_id = active_persona.id if active_persona else "preset_default"
 
     return {
@@ -91,14 +91,14 @@ async def set_active_persona(
     user=Depends(get_current_user),
 ):
     """Set the active persona for a guild"""
-    character_manager = app_state.get("character_manager")
-    if not character_manager:
+    persona_manager = app_state.get("persona_manager")
+    if not persona_manager:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Character manager not available",
+            detail="Persona manager not available",
         )
 
-    success = await character_manager.set_guild_persona(guild_id, body.persona_id)
+    success = await persona_manager.set_guild_persona(guild_id, body.persona_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -108,7 +108,7 @@ async def set_active_persona(
     # Update bot Discord identity (nickname + avatar)
     bot = app_state.get("bot")
     if bot:
-        persona = await character_manager.resolve_persona(guild_id)
+        persona = await persona_manager.resolve_persona(guild_id)
         if persona:
             await update_bot_identity(bot, guild_id, persona)
 
@@ -125,15 +125,15 @@ async def create_persona(
     guild_id: str, body: PersonaCreate, user=Depends(get_current_user)
 ):
     """Create a custom persona for a guild"""
-    character_manager = app_state.get("character_manager")
-    if not character_manager:
+    persona_manager = app_state.get("persona_manager")
+    if not persona_manager:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Character manager not available",
+            detail="Persona manager not available",
         )
 
     created_by = user.get("id", "")
-    persona = await character_manager.create_custom_persona(guild_id, created_by, body)
+    persona = await persona_manager.create_custom_persona(guild_id, created_by, body)
     if not persona:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -151,11 +151,11 @@ async def update_persona(
     user=Depends(get_current_user),
 ):
     """Update a custom persona (presets cannot be modified)"""
-    character_manager = app_state.get("character_manager")
-    if not character_manager:
+    persona_manager = app_state.get("persona_manager")
+    if not persona_manager:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Character manager not available",
+            detail="Persona manager not available",
         )
 
     # Verify persona belongs to this guild
@@ -183,7 +183,7 @@ async def update_persona(
             detail="Persona not found",
         )
 
-    success = await character_manager.update_custom_persona(persona_id, body)
+    success = await persona_manager.update_custom_persona(persona_id, body)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -202,9 +202,9 @@ async def delete_persona(
     guild_id: str, persona_id: str, user=Depends(get_current_user)
 ):
     """Delete a custom persona (presets cannot be deleted)"""
-    character_manager = app_state.get("character_manager")
+    persona_manager = app_state.get("persona_manager")
     db_client = app_state.get("db_client")
-    if not character_manager or not db_client:
+    if not persona_manager or not db_client:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Service not available",
@@ -227,7 +227,7 @@ async def delete_persona(
             detail="Persona not found",
         )
 
-    success = await character_manager.delete_custom_persona(persona_id)
+    success = await persona_manager.delete_custom_persona(persona_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -297,9 +297,9 @@ async def upload_avatar(
     await db_client.persona.update_persona(persona_id, {"avatar_url": avatar_url})
 
     # Clear cache
-    character_manager = app_state.get("character_manager")
-    if character_manager:
-        character_manager._persona_cache.pop(persona_id, None)
+    persona_manager = app_state.get("persona_manager")
+    if persona_manager:
+        persona_manager._persona_cache.pop(persona_id, None)
 
     logger.info(f"Avatar uploaded for persona {persona_id}")
     return {"avatar_url": avatar_url}
@@ -326,9 +326,9 @@ async def delete_avatar(
     # Clear avatar_url in DB
     await db_client.persona.update_persona(persona_id, {"avatar_url": ""})
 
-    character_manager = app_state.get("character_manager")
-    if character_manager:
-        character_manager._persona_cache.pop(persona_id, None)
+    persona_manager = app_state.get("persona_manager")
+    if persona_manager:
+        persona_manager._persona_cache.pop(persona_id, None)
 
     logger.info(f"Avatar deleted for persona {persona_id}")
     return {"status": "ok"}

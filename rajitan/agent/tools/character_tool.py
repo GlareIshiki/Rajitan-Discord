@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional
 
 from rajitan.agent.tools.base import Tool, ToolResult
-from rajitan.character.identity import update_bot_identity
+from rajitan.persona.identity import update_bot_identity
 from rajitan.utils.logger import get_logger
 
 logger = get_logger("agent.tools.character")
@@ -27,8 +27,8 @@ class CharacterTool(Tool):
         "required": ["persona_name_or_id"],
     }
 
-    def __init__(self, character_manager, bot):
-        self.manager = character_manager
+    def __init__(self, persona_manager, bot):
+        self.persona_manager = persona_manager
         self.bot = bot
 
     async def execute(self, *, agent_context=None, persona_name_or_id: str = "default", **kwargs) -> ToolResult:
@@ -48,30 +48,18 @@ class CharacterTool(Tool):
         else:
             persona_id = value
 
-        # Try setting via persona system
-        if hasattr(self.manager, "set_guild_persona"):
-            success = await self.manager.set_guild_persona(guild_id, persona_id)
-            if success:
-                await self._apply_identity(guild_id, persona_id)
-                return ToolResult(success=True, data=f"ペルソナを「{value}」に変更したよ！")
-
-        # Fallback to legacy update
-        if value in preset_names:
-            success = await self.manager.update_character_personality(
-                guild_id=guild_id,
-                personality_type=value,
-            )
-            if success:
-                return ToolResult(success=True, data=f"パーソナリティを「{value}」に変更したよ！")
+        # Set via persona manager
+        success = await self.persona_manager.set_guild_persona(guild_id, persona_id)
+        if success:
+            await self._apply_identity(guild_id)
+            return ToolResult(success=True, data=f"ペルソナを「{value}」に変更したよ！")
 
         return ToolResult(success=False, error="ペルソナの変更に失敗した。指定した名前またはIDを確認して。")
 
-    async def _apply_identity(self, guild_id: str, persona_id: str) -> None:
+    async def _apply_identity(self, guild_id: str) -> None:
         """Update bot nickname/avatar to match the switched persona."""
         try:
-            persona = await self.manager.resolve_persona(guild_id)
-            if not persona:
-                persona = await self.manager.db_client.persona.get_persona(persona_id)
+            persona = await self.persona_manager.resolve_persona(guild_id)
             if persona:
                 await update_bot_identity(self.bot, guild_id, persona)
         except Exception as e:

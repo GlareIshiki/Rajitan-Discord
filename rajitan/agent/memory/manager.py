@@ -156,7 +156,7 @@ class MemoryManager:
     async def remember(self, memory: LongTermMemory):
         """長期記憶に保存（UPSERT）"""
         try:
-            await self.db.upsert_agent_memory(
+            await self.db.memory.upsert(
                 guild_id=memory.guild_id,
                 category=memory.category,
                 key=memory.key,
@@ -177,7 +177,7 @@ class MemoryManager:
     ) -> List[LongTermMemory]:
         """長期記憶を検索"""
         try:
-            rows = await self.db.get_agent_memories(
+            rows = await self.db.memory.get_memories(
                 guild_id=guild_id,
                 category=category,
                 user_id=user_id,
@@ -212,7 +212,7 @@ class MemoryManager:
     async def forget(self, guild_id: str, category: str, key: str) -> bool:
         """長期記憶を削除"""
         try:
-            return await self.db.delete_agent_memory(guild_id, category, key)
+            return await self.db.memory.delete(guild_id, category, key)
         except Exception as e:
             logger.error(f"Failed to forget long-term memory: {e}")
             return False

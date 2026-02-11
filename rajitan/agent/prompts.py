@@ -27,9 +27,11 @@ class AgentPromptBuilder:
         character_manager,
         conversation_tracker,
         memory_integrator: "MemoryPromptIntegrator" = None,
+        persona_manager=None,
         prompts_config: Optional[PromptsConfig] = None,
     ):
         self.character_manager = character_manager
+        self.persona_manager = persona_manager
         self.conversation_tracker = conversation_tracker
         self.memory_integrator = memory_integrator
         self.prompts = prompts_config or PromptsConfig()
@@ -73,7 +75,7 @@ class AgentPromptBuilder:
 
         # Section 8: Recent conversation context (direct Discord API)
         conversation_section = await self._build_conversation_context(
-            context.message.channel
+            context.channel
         )
         if conversation_section:
             parts.append(conversation_section)
@@ -113,14 +115,14 @@ class AgentPromptBuilder:
         """Fetch character personality from DB (persona-aware)"""
         try:
             # Try persona resolution first
-            if hasattr(self.character_manager, "resolve_persona"):
-                persona = await self.character_manager.resolve_persona(guild_id)
+            if self.persona_manager:
+                persona = await self.persona_manager.resolve_persona(guild_id)
                 if persona and persona.system_prompt:
                     return f"## キャラクター設定\n{persona.system_prompt}"
 
             # Fallback: legacy character.system_prompt
             character = await self.character_manager.get_character(guild_id)
-            if character and hasattr(character, "system_prompt") and character.system_prompt:
+            if character and character.system_prompt:
                 return f"## キャラクター設定\n{character.system_prompt}"
         except Exception as e:
             logger.warning(f"Failed to get character: {e}")
