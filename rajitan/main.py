@@ -290,6 +290,7 @@ class RajitanApplication:
             from rajitan.agent.tools.executor import GenericExecutor
 
             service_registry = ServiceRegistry()
+            service_registry.register("bot", self.bot)
             service_registry.register("conversation_summarizer", self.conversation_summarizer)
             service_registry.register("conversation_tracker", self.conversation_tracker)
             service_registry.register("conversation_analyzer", self.conversation_analyzer)

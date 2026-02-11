@@ -24,6 +24,7 @@ class Persona(BaseModel):
     )
     is_preset: bool = False
     is_public: bool = False                             # True = visible to all guilds
+    avatar_url: str = ""                                # URL to persona avatar image
     created_by: str = ""                                # Discord user ID
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
@@ -37,6 +38,7 @@ class PersonaCreate(BaseModel):
     system_prompt: str = ""
     personality_traits: Optional[Dict[str, float]] = None
     is_public: bool = False
+    avatar_url: str = ""
 
 
 class PersonaUpdate(BaseModel):
@@ -47,3 +49,4 @@ class PersonaUpdate(BaseModel):
     system_prompt: Optional[str] = None
     personality_traits: Optional[Dict[str, float]] = None
     is_public: Optional[bool] = None
+    avatar_url: Optional[str] = None

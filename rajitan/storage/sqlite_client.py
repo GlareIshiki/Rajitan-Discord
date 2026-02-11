@@ -420,6 +420,14 @@ class SQLiteClient:
             except Exception:
                 pass  # Column already exists
 
+            # Add avatar_url to personas (idempotent)
+            try:
+                await db.execute(
+                    "ALTER TABLE personas ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''"
+                )
+            except Exception:
+                pass  # Column already exists
+
             await db.commit()
     
     # Guild operations
@@ -866,8 +874,8 @@ class SQLiteClient:
                     '''INSERT INTO personas
                        (id, guild_id, name, display_name, description,
                         system_prompt, personality_traits, is_preset, created_by,
-                        created_at, updated_at, is_public)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                        created_at, updated_at, is_public, avatar_url)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                     (
                         persona.id,
                         persona.guild_id,
@@ -881,6 +889,7 @@ class SQLiteClient:
                         persona.created_at,
                         persona.updated_at,
                         int(persona.is_public),
+                        persona.avatar_url,
                     ),
                 )
                 await db.commit()
@@ -896,7 +905,7 @@ class SQLiteClient:
                 async with db.execute(
                     '''SELECT id, guild_id, name, display_name, description,
                               system_prompt, personality_traits, is_preset, created_by,
-                              created_at, updated_at, is_public
+                              created_at, updated_at, is_public, avatar_url
                        FROM personas WHERE id = ?''',
                     (persona_id,),
                 ) as cursor:
@@ -915,7 +924,7 @@ class SQLiteClient:
                 async with db.execute(
                     '''SELECT id, guild_id, name, display_name, description,
                               system_prompt, personality_traits, is_preset, created_by,
-                              created_at, updated_at, is_public
+                              created_at, updated_at, is_public, avatar_url
                        FROM personas
                        WHERE guild_id = '' OR guild_id = ? OR is_public = 1
                        ORDER BY is_preset DESC, created_at ASC, name ASC''',
@@ -928,7 +937,7 @@ class SQLiteClient:
             return []
 
     async def update_persona(self, persona_id: str, updates: Dict[str, Any]) -> bool:
-        """Update a persona (refuses presets)"""
+        """Update a persona (presets: only avatar_url allowed)"""
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 # Check if preset
@@ -938,9 +947,13 @@ class SQLiteClient:
                     row = await cursor.fetchone()
                     if not row:
                         return False
-                    if row[0]:
-                        logger.warning(f"Cannot update preset persona: {persona_id}")
-                        return False
+                    is_preset = bool(row[0])
+
+                    # Presets: only avatar_url can be updated
+                    if is_preset:
+                        if set(updates.keys()) - {"avatar_url"}:
+                            logger.warning(f"Cannot update preset persona fields (except avatar_url): {persona_id}")
+                            return False
 
                 set_parts = []
                 params = []
@@ -951,7 +964,7 @@ class SQLiteClient:
                     elif key == "is_public":
                         set_parts.append("is_public = ?")
                         params.append(int(value))
-                    elif key in ("name", "display_name", "description", "system_prompt"):
+                    elif key in ("name", "display_name", "description", "system_prompt", "avatar_url"):
                         set_parts.append(f"{key} = ?")
                         params.append(value)
 
@@ -1057,6 +1070,7 @@ class SQLiteClient:
             personality_traits=traits,
             is_preset=bool(row[7]),
             is_public=bool(row[11]) if len(row) > 11 else False,
+            avatar_url=row[12] if len(row) > 12 else "",
             created_by=row[8] or "",
             created_at=datetime.fromisoformat(row[9]) if row[9] else datetime.now(),
             updated_at=datetime.fromisoformat(row[10]) if row[10] else datetime.now(),

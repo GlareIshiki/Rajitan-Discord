@@ -471,6 +471,7 @@ class CharacterManager:
                 personality_traits=traits,
                 is_preset=False,
                 is_public=data.is_public,
+                avatar_url=(data.avatar_url or "").strip(),
                 created_by=created_by,
             )
 
@@ -512,6 +513,8 @@ class CharacterManager:
                 }
             if data.is_public is not None:
                 updates["is_public"] = data.is_public
+            if data.avatar_url is not None:
+                updates["avatar_url"] = data.avatar_url.strip()
 
             if not updates:
                 return False

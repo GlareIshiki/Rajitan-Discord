@@ -1,9 +1,13 @@
 """FastAPI server for Rajitan WebUI integration"""
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from rajitan.utils.logger import get_logger
 from rajitan.utils.config import get_config
+
+UPLOADS_DIR = Path(__file__).parents[2] / "uploads"
 
 logger = get_logger("web_server")
 config = get_config()
@@ -85,5 +89,10 @@ def create_app() -> FastAPI:
     app.include_router(instagram_router, prefix="/api/instagram")
     app.include_router(canva_router, prefix="/api/canva")
     app.include_router(tools_router, prefix="/api/tools")
+
+    # Static file serving for uploads (avatars, etc.)
+    avatars_dir = UPLOADS_DIR / "avatars"
+    avatars_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
     return app
