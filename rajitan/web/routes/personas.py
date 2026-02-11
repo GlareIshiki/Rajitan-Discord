@@ -58,7 +58,7 @@ async def get_persona(guild_id: str, persona_id: str, user=Depends(get_current_u
             detail="Database not available",
         )
 
-    persona = await db_client.get_persona(persona_id)
+    persona = await db_client.persona.get_persona(persona_id)
     if not persona:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -160,7 +160,7 @@ async def update_persona(
 
     # Verify persona belongs to this guild
     db_client = app_state.get("db_client")
-    persona = await db_client.get_persona(persona_id) if db_client else None
+    persona = await db_client.persona.get_persona(persona_id) if db_client else None
     if not persona:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -190,7 +190,7 @@ async def update_persona(
             detail="Failed to update persona",
         )
 
-    updated = await db_client.get_persona(persona_id)
+    updated = await db_client.persona.get_persona(persona_id)
     return _persona_to_dict(updated) if updated else {"status": "ok"}
 
 
@@ -210,7 +210,7 @@ async def delete_persona(
             detail="Service not available",
         )
 
-    persona = await db_client.get_persona(persona_id)
+    persona = await db_client.persona.get_persona(persona_id)
     if not persona:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -255,7 +255,7 @@ async def upload_avatar(
     if not db_client:
         raise HTTPException(status_code=503, detail="Database not available")
 
-    persona = await db_client.get_persona(persona_id)
+    persona = await db_client.persona.get_persona(persona_id)
     if not persona:
         raise HTTPException(status_code=404, detail="Persona not found")
 
@@ -294,7 +294,7 @@ async def upload_avatar(
     avatar_url = f"{base}/uploads/avatars/{persona_id}.png?t={int(time.time())}"
 
     # Update DB (works for presets too)
-    await db_client.update_persona(persona_id, {"avatar_url": avatar_url})
+    await db_client.persona.update_persona(persona_id, {"avatar_url": avatar_url})
 
     # Clear cache
     character_manager = app_state.get("character_manager")
@@ -315,7 +315,7 @@ async def delete_avatar(
     if not db_client:
         raise HTTPException(status_code=503, detail="Database not available")
 
-    persona = await db_client.get_persona(persona_id)
+    persona = await db_client.persona.get_persona(persona_id)
     if not persona:
         raise HTTPException(status_code=404, detail="Persona not found")
 
@@ -324,7 +324,7 @@ async def delete_avatar(
     dest.unlink(missing_ok=True)
 
     # Clear avatar_url in DB
-    await db_client.update_persona(persona_id, {"avatar_url": ""})
+    await db_client.persona.update_persona(persona_id, {"avatar_url": ""})
 
     character_manager = app_state.get("character_manager")
     if character_manager:

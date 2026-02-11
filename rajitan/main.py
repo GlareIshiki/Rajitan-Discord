@@ -137,7 +137,7 @@ class RajitanApplication:
             logger.info("Initializing database clients...")
             self.db_client = SQLiteClient()
             await self.db_client.initialize()
-            await self.db_client.seed_preset_personas()
+            await self.db_client.persona.seed_preset_personas()
 
             self.redis_client = RedisClient()
             await self.redis_client.initialize()

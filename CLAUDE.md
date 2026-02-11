@@ -242,6 +242,7 @@ RedisClient未接続時はメモリ辞書にフォールバック。QuizRunner, 
 ## Storage
 
 - **SQLite** (`storage/sqlite_client.py`): guilds, channels, characters, schedules, usage_stats, agent_memories, instagram_sessions, canva_tokens, LeveMagiテーブル群
+  - **PersonaRepo** (`storage/persona_repo.py`): personas テーブル専用リポジトリ。`SQLiteClient.persona` 経由でアクセス
 - **Redis** (`storage/redis_client.py`): 会話データ、セッション、ワーキングメモリ、アクションログ。未接続時はメモリ辞書にフォールバック
 - **注意**: VPSのSQLiteバージョンが古いため、UNIQUE制約に式（COALESCE等）を使わないこと。カラムをNOT NULL DEFAULT ''にして単純なカラム参照で対応する
 

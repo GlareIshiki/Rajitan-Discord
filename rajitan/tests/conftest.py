@@ -109,6 +109,18 @@ def mock_db_client():
     client.add_usage_stat = AsyncMock(return_value=True)
     client.close = AsyncMock()
 
+    # Persona repo sub-mock (mirrors PersonaRepo interface)
+    persona = MagicMock()
+    persona.seed_preset_personas = AsyncMock()
+    persona.create_persona = AsyncMock(return_value=True)
+    persona.get_persona = AsyncMock(return_value=None)
+    persona.get_guild_personas = AsyncMock(return_value=[])
+    persona.update_persona = AsyncMock(return_value=True)
+    persona.delete_persona = AsyncMock(return_value=True)
+    persona.count_guild_personas = AsyncMock(return_value=0)
+    persona.set_guild_active_persona = AsyncMock(return_value=True)
+    client.persona = persona
+
     return client
 
 

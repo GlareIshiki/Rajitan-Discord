@@ -391,18 +391,18 @@ class CharacterManager:
         """Get persona with cache"""
         if persona_id in self._persona_cache:
             return self._persona_cache[persona_id]
-        persona = await self.db_client.get_persona(persona_id)
+        persona = await self.db_client.persona.get_persona(persona_id)
         if persona:
             self._persona_cache[persona_id] = persona
         return persona
 
     async def get_available_personas(self, guild_id: str) -> List[Persona]:
         """Get all personas available to a guild (presets + custom)"""
-        return await self.db_client.get_guild_personas(guild_id)
+        return await self.db_client.persona.get_guild_personas(guild_id)
 
     async def set_guild_persona(self, guild_id: str, persona_id: str) -> bool:
         """Set the guild's default persona"""
-        success = await self.db_client.set_guild_active_persona(guild_id, persona_id)
+        success = await self.db_client.persona.set_guild_active_persona(guild_id, persona_id)
         if success:
             # Invalidate caches
             self._character_cache.pop(guild_id, None)
@@ -421,13 +421,13 @@ class CharacterManager:
                 return None
 
             # Check limit
-            count = await self.db_client.count_guild_personas(guild_id)
+            count = await self.db_client.persona.count_guild_personas(guild_id)
             if count >= MAX_CUSTOM_PERSONAS_PER_GUILD:
                 logger.error(f"Guild {guild_id} has reached the persona limit ({MAX_CUSTOM_PERSONAS_PER_GUILD})")
                 return None
 
             # Check name uniqueness within guild
-            existing = await self.db_client.get_guild_personas(guild_id)
+            existing = await self.db_client.persona.get_guild_personas(guild_id)
             for p in existing:
                 if p.guild_id == guild_id and p.name == name:
                     logger.error(f"Persona name '{name}' already exists in guild {guild_id}")
@@ -475,7 +475,7 @@ class CharacterManager:
                 created_by=created_by,
             )
 
-            success = await self.db_client.create_persona(persona)
+            success = await self.db_client.persona.create_persona(persona)
             if success:
                 self._persona_cache[persona_id] = persona
                 logger.info(f"Custom persona '{name}' created for guild {guild_id}")
@@ -519,7 +519,7 @@ class CharacterManager:
             if not updates:
                 return False
 
-            success = await self.db_client.update_persona(persona_id, updates)
+            success = await self.db_client.persona.update_persona(persona_id, updates)
             if success:
                 self._persona_cache.pop(persona_id, None)
             return success
@@ -530,7 +530,7 @@ class CharacterManager:
 
     async def delete_custom_persona(self, persona_id: str) -> bool:
         """Delete a custom persona"""
-        success = await self.db_client.delete_persona(persona_id)
+        success = await self.db_client.persona.delete_persona(persona_id)
         if success:
             self._persona_cache.pop(persona_id, None)
         return success

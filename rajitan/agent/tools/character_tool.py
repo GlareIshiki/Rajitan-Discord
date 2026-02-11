@@ -71,7 +71,7 @@ class CharacterTool(Tool):
         try:
             persona = await self.manager.resolve_persona(guild_id)
             if not persona:
-                persona = await self.manager.db_client.get_persona(persona_id)
+                persona = await self.manager.db_client.persona.get_persona(persona_id)
             if persona:
                 await update_bot_identity(self.bot, guild_id, persona)
         except Exception as e:
