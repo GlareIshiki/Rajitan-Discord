@@ -83,6 +83,7 @@ class Config:
         self.api_port = int(os.getenv("API_PORT", "8000"))
         self.api_cors_origins = os.getenv("API_CORS_ORIGINS", "http://localhost:3000").split(",")
         self.api_enabled = os.getenv("API_ENABLED", "True").lower() == "true"
+        self.api_public_url = os.getenv("API_PUBLIC_URL", f"http://{self.api_host}:{self.api_port}")
 
 
 # Global config instance

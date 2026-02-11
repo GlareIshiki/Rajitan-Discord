@@ -290,10 +290,7 @@ async def upload_avatar(
 
     # Build public URL
     config = get_config()
-    base = f"https://api.glareishiki.com"
-    if config.api_port != 443:
-        # Local dev fallback
-        base = f"http://{config.api_host}:{config.api_port}"
+    base = config.api_public_url.rstrip("/")
     avatar_url = f"{base}/uploads/avatars/{persona_id}.png?t={int(time.time())}"
 
     # Update DB (works for presets too)
